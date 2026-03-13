@@ -4,6 +4,8 @@ import { Button } from '../shared/Button';
 import { useExtensionSettings } from '../../hooks/useExtensionSettings';
 import { useActiveTab } from '../../hooks/useActiveTab';
 import { useAutomationWorkspace } from '../../hooks/useAutomationWorkspace';
+import type { AutofillResult } from '@content/types';
+import { canUseTabMessaging, sendMessageToTab } from '../../utils/tab-messaging';
 import * as S from './QuickFill.styles';
 
 export const QuickFill: React.FC = () => {
@@ -20,10 +22,11 @@ export const QuickFill: React.FC = () => {
   const { selectedWebsiteSnapshot } = useAutomationWorkspace();
   const [isFilling, setIsFilling] = useState(false);
   const [fillFeedback, setFillFeedback] = useState<string | null>(null);
+  const canFillCurrentTab = !!tab?.id && canUseTabMessaging(tab.url);
 
   const handleFillCurrentForm = async () => {
-    if (!tab?.id) {
-      setFillFeedback('No active tab available.');
+    if (!tab?.id || !canFillCurrentTab) {
+      setFillFeedback('Open a regular http/https page before using Quick Fill.');
       return;
     }
 
@@ -31,7 +34,11 @@ export const QuickFill: React.FC = () => {
     setFillFeedback(null);
 
     try {
-      const response = await chrome.tabs.sendMessage(tab.id, { type: 'form:fill' });
+      const response = await sendMessageToTab<{
+        success?: boolean;
+        result?: AutofillResult;
+        error?: string;
+      }>(tab, { type: 'form:fill' });
 
       if (!response?.success || !response.result) {
         throw new Error(response?.error || 'No autofill result returned');
@@ -134,13 +141,16 @@ export const QuickFill: React.FC = () => {
         </S.Section>
         {isLoading ? <S.LoadingText>Loading current extension preferences...</S.LoadingText> : null}
         {error ? <S.ErrorText>{error}</S.ErrorText> : null}
+        {!canFillCurrentTab && tab?.url ? (
+          <S.InfoText>Quick Fill only works on regular website pages.</S.InfoText>
+        ) : null}
         {fillFeedback ? <S.InfoText>{fillFeedback}</S.InfoText> : null}
         <S.Actions>
           <Button
             fullWidth
             onClick={handleFillCurrentForm}
             isLoading={isFilling}
-            disabled={!settings.enabled || isLoading}
+            disabled={!settings.enabled || isLoading || !canFillCurrentTab}
           >
             Fill Current Form
           </Button>

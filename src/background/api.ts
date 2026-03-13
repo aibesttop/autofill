@@ -4,6 +4,7 @@
 
 import { API_ENDPOINT } from '@shared/constants';
 import type { Website } from '@shared/types';
+import { LOCAL_TEST_MODE, LOCAL_TEST_WEBSITES } from '@shared/testing/local-test';
 import { getToken } from './auth';
 
 /**
@@ -11,6 +12,11 @@ import { getToken } from './auth';
  */
 export async function fetchWebsites(): Promise<Website[]> {
   try {
+    if (LOCAL_TEST_MODE) {
+      console.log('[autofill Background] Local test mode enabled, returning mock websites');
+      return LOCAL_TEST_WEBSITES;
+    }
+
     console.log('[autofill Background] Getting websites...');
 
     const token = await getToken();

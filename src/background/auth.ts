@@ -3,6 +3,7 @@
  */
 
 import { API_BASE_URL, API_ENDPOINT, STORAGE_KEYS } from '@shared/constants';
+import { LOCAL_TEST_AUTH_TOKEN, LOCAL_TEST_MODE } from '@shared/testing/local-test';
 
 export interface AuthToken {
   access_token: string;
@@ -25,6 +26,10 @@ export async function saveToken(token: AuthToken): Promise<void> {
  * Get auth token from chrome.storage.local
  */
 export async function getToken(): Promise<AuthToken | null> {
+  if (LOCAL_TEST_MODE) {
+    return LOCAL_TEST_AUTH_TOKEN;
+  }
+
   try {
     const result = await chrome.storage.local.get(STORAGE_KEYS.AUTH_TOKEN);
     const token = result[STORAGE_KEYS.AUTH_TOKEN];
@@ -161,6 +166,15 @@ export class AuthFlow {
 let authFlowInstance: AuthFlow | null = null;
 
 export function startAuthFlow(): void {
+  if (LOCAL_TEST_MODE) {
+    void saveToken(LOCAL_TEST_AUTH_TOKEN);
+    chrome.runtime.sendMessage({
+      type: 'auth.success',
+      payload: LOCAL_TEST_AUTH_TOKEN,
+    }).catch(() => {});
+    return;
+  }
+
   if (!authFlowInstance) {
     authFlowInstance = new AuthFlow();
   }

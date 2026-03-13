@@ -27,6 +27,7 @@
   "options_page": "options.html",
   
   "permissions": [
+    "activeTab",
     "storage",
     "sidePanel",
     "scripting",
@@ -35,11 +36,8 @@
   ],
   
   "host_permissions": [
-    "https://autofill.app/*",
-    "https://twitter.com/*",
-    "*://x.com/*",
-    "*://mobile.x.com/*",
-    "https://twibird.com/*"
+    "http://*/*",
+    "https://*/*"
   ],
   
   "web_accessible_resources": [{

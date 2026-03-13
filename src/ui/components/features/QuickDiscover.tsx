@@ -3,21 +3,9 @@ import { Card } from '../shared/Card';
 import { Button } from '../shared/Button';
 import { useActiveTab } from '../../hooks/useActiveTab';
 import { recordQuickDiscoverTask } from '../../hooks/useAutomationWorkspace';
+import { canUseTabMessaging, sendMessageToTab } from '../../utils/tab-messaging';
 import type { FormDetectionResult } from '@content/types';
 import * as S from './QuickDiscover.styles';
-
-function canAnalyzeUrl(url?: string): boolean {
-  if (!url) {
-    return false;
-  }
-
-  try {
-    const parsed = new URL(url);
-    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
-  } catch {
-    return false;
-  }
-}
 
 function getDomainLabel(url: string): string {
   try {
@@ -33,7 +21,7 @@ export const QuickDiscover: React.FC = () => {
   const [analysis, setAnalysis] = useState<FormDetectionResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const canAnalyze = !!tab?.id && canAnalyzeUrl(tab.url);
+  const canAnalyze = !!tab?.id && canUseTabMessaging(tab.url);
 
   const handleAnalyze = async () => {
     if (!tab?.id || !canAnalyze) {
@@ -45,7 +33,11 @@ export const QuickDiscover: React.FC = () => {
     setError(null);
 
     try {
-      const response = await chrome.tabs.sendMessage(tab.id, { type: 'form:detect' });
+      const response = await sendMessageToTab<{
+        success?: boolean;
+        result?: FormDetectionResult;
+        error?: string;
+      }>(tab, { type: 'form:detect' });
 
       if (!response?.success || !response.result) {
         throw new Error(response?.error || 'No analysis result returned');

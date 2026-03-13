@@ -32,11 +32,13 @@ export function handleContextMenuClick(
   tab?: chrome.tabs.Tab
 ): void {
   if (info.menuItemId === CONTEXT_MENU_ID && tab?.id) {
-    try {
-      chrome.tabs.sendMessage(tab.id, { type: 'contextmenu:open-panel' });
-    } catch (error) {
-      console.error('[ContextMenu] Failed to send message:', error);
+    if (!chrome.sidePanel.open) {
+      return;
     }
+
+    void chrome.sidePanel.open({ tabId: tab.id }).catch((error) => {
+      console.error('[ContextMenu] Failed to open side panel:', error);
+    });
   }
 }
 

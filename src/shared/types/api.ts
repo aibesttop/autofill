@@ -20,6 +20,8 @@ export interface Website {
   url: string;
   description?: string;
   category?: string;
+  categories?: string[];
+  tags?: string[];
   status: 'pending' | 'active' | 'error';
   created_at: string;
   updated_at: string;

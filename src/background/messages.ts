@@ -71,11 +71,7 @@ function handleOpenSidePanel(
           await chrome.sidePanel.open({ tabId });
           openSidePanelTabs.add(tabId);
 
-          try {
-            chrome.tabs.sendMessage(tabId, { type: 'sidepanel:toggle', open: true });
-          } catch {
-            // Ignore
-          }
+          await chrome.tabs.sendMessage(tabId, { type: 'sidepanel:toggle', open: true }).catch(() => {});
         } else if (windowId) {
           await chrome.sidePanel.open({ windowId });
         }

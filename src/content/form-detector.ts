@@ -11,7 +11,14 @@ export class FormFieldDetector {
   detect(): FormField[] {
     this.detectedFields.clear();
 
-    const inputs = document.querySelectorAll('input, textarea, select');
+    const inputs = document.querySelectorAll(
+      [
+        'input',
+        'textarea',
+        'select',
+        ...FORM_SELECTORS.CUSTOM_SELECT_SELECTORS,
+      ].join(', ')
+    );
     let count = 0;
 
     for (const element of inputs) {
@@ -52,7 +59,14 @@ export class FormFieldDetector {
       return element;
     }
 
-    const closest = element.closest('input, textarea, select');
+    const closest = element.closest(
+      [
+        'input',
+        'textarea',
+        'select',
+        ...FORM_SELECTORS.CUSTOM_SELECT_SELECTORS,
+      ].join(', ')
+    );
     return closest instanceof HTMLElement ? closest : null;
   }
 
@@ -77,7 +91,38 @@ export class FormFieldDetector {
       return true;
     }
 
+    if (this.isCustomSelectField(element)) {
+      if (this.isHidden(element)) return false;
+      if (this.isDisabled(element)) return false;
+      return true;
+    }
+
     return false;
+  }
+
+  private isCustomSelectField(element: HTMLElement): boolean {
+    if (
+      element instanceof HTMLInputElement ||
+      element instanceof HTMLTextAreaElement ||
+      element instanceof HTMLSelectElement
+    ) {
+      return false;
+    }
+
+    const role = element.getAttribute('role')?.toLowerCase();
+    const ariaHasPopup = element.getAttribute('aria-haspopup')?.toLowerCase();
+
+    return (
+      role === 'combobox' ||
+      ariaHasPopup === 'listbox'
+    );
+  }
+
+  private isDisabled(element: HTMLElement): boolean {
+    return (
+      element.hasAttribute('disabled') ||
+      element.getAttribute('aria-disabled') === 'true'
+    );
   }
 
   private isHidden(element: HTMLElement): boolean {
@@ -95,24 +140,43 @@ export class FormFieldDetector {
 
   private createFormField(element: HTMLElement): FormField {
     const input = element as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
-    const type = input instanceof HTMLSelectElement ? 'select' : input.type || 'text';
-    const placeholder = 'placeholder' in input ? input.placeholder || undefined : undefined;
+    const isCustomSelect = this.isCustomSelectField(element);
+    const type = input instanceof HTMLSelectElement || isCustomSelect ? 'select' : input.type || 'text';
+    const placeholder =
+      'placeholder' in input
+        ? input.placeholder || undefined
+        : element.getAttribute('aria-placeholder') ||
+          element.getAttribute('data-placeholder') ||
+          undefined;
 
     return {
-      element: input,
+      element: isCustomSelect ? element : input,
       type,
-      name: input.name || input.id || '',
-      label: this.findLabel(input),
+      name: input.name || input.id || element.getAttribute('name') || '',
+      label: this.findLabel(isCustomSelect ? element : input),
       placeholder,
-      autocompleteType: this.getAutocompleteType(input),
+      autocompleteType: this.getAutocompleteType(isCustomSelect ? element : input),
     };
   }
 
   private findLabel(
-    input: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+    input: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | HTMLElement
   ): string | undefined {
     const ariaLabel = input.getAttribute('aria-label');
     if (ariaLabel) return ariaLabel;
+
+    const labelledBy = input.getAttribute('aria-labelledby');
+    if (labelledBy) {
+      const labelText = labelledBy
+        .split(/\s+/)
+        .map((id) => document.getElementById(id)?.textContent?.trim() || '')
+        .filter(Boolean)
+        .join(' ');
+
+      if (labelText) {
+        return labelText;
+      }
+    }
 
     if (input.id) {
       const label = document.querySelector(`label[for="${input.id}"]`);
@@ -123,19 +187,20 @@ export class FormFieldDetector {
     if (parentLabel) {
       const text = parentLabel.textContent?.trim();
       const placeholder = 'placeholder' in input ? input.placeholder : '';
-      if (text && text !== placeholder && text !== input.value) return text;
+      const currentValue = 'value' in input ? input.value : '';
+      if (text && text !== placeholder && text !== currentValue) return text;
     }
 
     return undefined;
   }
 
   private getAutocompleteType(
-    input: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+    input: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | HTMLElement
   ): string | undefined {
     const autocomplete = input.getAttribute('autocomplete');
     if (autocomplete && autocomplete !== 'off') return autocomplete;
 
-    if (input instanceof HTMLSelectElement) {
+    if (input instanceof HTMLSelectElement || !(input instanceof HTMLInputElement)) {
       return undefined;
     }
 

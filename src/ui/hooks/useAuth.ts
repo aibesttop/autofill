@@ -3,6 +3,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import { LOCAL_TEST_AUTH_TOKEN, LOCAL_TEST_MODE } from '@shared/testing/local-test';
 import type { AuthState } from '../types/ui';
 
 const TOKEN_KEY = 'auth.token';
@@ -18,6 +19,19 @@ function getUnauthenticatedState(error: string | null = null): AuthState {
 }
 
 function getStateFromToken(token: any): AuthState {
+  if (LOCAL_TEST_MODE) {
+    return {
+      isAuthenticated: true,
+      token: LOCAL_TEST_AUTH_TOKEN.access_token,
+      user: {
+        id: LOCAL_TEST_AUTH_TOKEN.client_id,
+        name: 'Local Test Mode',
+      },
+      isLoading: false,
+      error: null,
+    };
+  }
+
   if (token?.access_token) {
     return {
       isAuthenticated: true,
@@ -83,6 +97,11 @@ export function useAuth() {
   };
 
   const login = async () => {
+    if (LOCAL_TEST_MODE) {
+      setAuthState(getStateFromToken(LOCAL_TEST_AUTH_TOKEN));
+      return;
+    }
+
     setAuthState((prev) => ({ ...prev, isLoading: true, error: null }));
 
     try {
@@ -130,6 +149,11 @@ export function useAuth() {
   };
 
   const logout = async () => {
+    if (LOCAL_TEST_MODE) {
+      setAuthState(getStateFromToken(LOCAL_TEST_AUTH_TOKEN));
+      return;
+    }
+
     try {
       await chrome.storage.local.remove(TOKEN_KEY);
       setAuthState(getUnauthenticatedState());

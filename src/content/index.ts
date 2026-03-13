@@ -33,13 +33,13 @@ async function initialize(): Promise<void> {
   markAsInitialized();
   console.log(TAG, 'Initializing...');
 
+  setupMessageListener();
+
   const storage = getStorageManager();
   await storage.initialize();
 
   const state = storage.getState();
   console.log(TAG, 'Plugin state:', state);
-
-  setupMessageListener();
 
   const bridge = getPageHookBridge();
   bridge.start();

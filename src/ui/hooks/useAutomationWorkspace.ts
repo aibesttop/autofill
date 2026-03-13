@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { STORAGE_KEYS } from '@shared/constants';
 import type { Website } from '@shared/types';
+import { LOCAL_TEST_DEFAULT_WEBSITE, LOCAL_TEST_MODE } from '@shared/testing/local-test';
 import type { FormDetectionResult } from '@content/types';
 import type { BatchSubmitItem, Task, TaskMetrics, TaskStatus, TaskStep } from '../types/ui';
 
@@ -9,7 +10,9 @@ export interface WebsiteSnapshot {
   name: string;
   url: string;
   category?: string;
+  categories?: string[];
   description?: string;
+  tags?: string[];
   status?: 'pending' | 'active' | 'error';
 }
 
@@ -53,6 +56,21 @@ function createId(prefix: string): string {
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function toStringList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+  }
+
+  if (typeof value === 'string') {
+    return value
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  return [];
 }
 
 function sanitizeTaskStep(value: unknown): TaskStep | null {
@@ -140,12 +158,17 @@ function sanitizeWebsiteSnapshot(value: unknown): WebsiteSnapshot | null {
     return null;
   }
 
+  const categories = toStringList(value.categories);
+  const tags = toStringList(value.tags);
+
   return {
     id: value.id,
     name: value.name,
     url: typeof value.url === 'string' ? value.url : '',
     category: typeof value.category === 'string' ? value.category : undefined,
+    categories,
     description: typeof value.description === 'string' ? value.description : undefined,
+    tags,
     status: value.status as WebsiteSnapshot['status'],
   };
 }
@@ -243,7 +266,9 @@ function toWebsiteSnapshot(website: Website): WebsiteSnapshot {
     name: website.name,
     url: website.url,
     category: website.category,
+    categories: website.categories,
     description: website.description,
+    tags: website.tags,
     status: website.status,
   };
 }
@@ -259,15 +284,27 @@ async function readWorkspaceStorage(): Promise<WorkspaceStorageState> {
     STORAGE_KEYS.SELECTED_WEBSITE_SNAPSHOT,
   ]);
 
+  const selectedWebsiteSnapshot = sanitizeWebsiteSnapshot(
+    result[STORAGE_KEYS.SELECTED_WEBSITE_SNAPSHOT]
+  );
+  const selectedWebsiteId =
+    typeof result[STORAGE_KEYS.SELECTED_WEBSITE_ID] === 'string'
+      ? result[STORAGE_KEYS.SELECTED_WEBSITE_ID]
+      : null;
+
+  if (LOCAL_TEST_MODE && !selectedWebsiteSnapshot) {
+    const fallbackSnapshot = toWebsiteSnapshot(LOCAL_TEST_DEFAULT_WEBSITE);
+    return {
+      batchState: normalizeBatchState(result[STORAGE_KEYS.BATCH_STATE]),
+      selectedWebsiteId: fallbackSnapshot.id,
+      selectedWebsiteSnapshot: fallbackSnapshot,
+    };
+  }
+
   return {
     batchState: normalizeBatchState(result[STORAGE_KEYS.BATCH_STATE]),
-    selectedWebsiteId:
-      typeof result[STORAGE_KEYS.SELECTED_WEBSITE_ID] === 'string'
-        ? result[STORAGE_KEYS.SELECTED_WEBSITE_ID]
-        : null,
-    selectedWebsiteSnapshot: sanitizeWebsiteSnapshot(
-      result[STORAGE_KEYS.SELECTED_WEBSITE_SNAPSHOT]
-    ),
+    selectedWebsiteId,
+    selectedWebsiteSnapshot,
   };
 }
 
@@ -340,6 +377,10 @@ export function useAutomationWorkspace() {
 
     void readWorkspaceStorage()
       .then((nextState) => {
+        if (LOCAL_TEST_MODE && nextState.selectedWebsiteSnapshot) {
+          void persistSelectedWebsite(nextState.selectedWebsiteSnapshot);
+        }
+
         if (isMounted) {
           setState((prev) => ({
             ...prev,
@@ -410,6 +451,9 @@ export function useAutomationWorkspace() {
   const refresh = async () => {
     try {
       const nextState = await readWorkspaceStorage();
+      if (LOCAL_TEST_MODE && nextState.selectedWebsiteSnapshot) {
+        await persistSelectedWebsite(nextState.selectedWebsiteSnapshot);
+      }
       setState((prev) => ({
         ...prev,
         ...nextState,

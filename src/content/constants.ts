@@ -7,6 +7,7 @@ export const STORAGE_KEYS = {
   AUTO_DETECT: 'autoDetect',
   FLOATING_BUTTON: 'floatingButton',
   CONTEXT_MENU: 'contextMenuEnabled',
+  SELECTED_WEBSITE_SNAPSHOT: 'selectedWebsiteSnapshot',
 } as const;
 
 export const DEFAULTS = {
@@ -25,7 +26,10 @@ export const TWITTER_DOMAINS = [
 
 export const FORM_SELECTORS = {
   INPUT_TYPES: ['text', 'email', 'url', 'tel', 'search', 'textarea'],
-  IGNORE_ROLES: ['combobox', 'listbox', 'textbox'],
+  CUSTOM_SELECT_SELECTORS: [
+    '[role="combobox"]',
+    '[aria-haspopup="listbox"]',
+  ],
   IGNORE_SELECTORS: '[aria-hidden="true"]',
 } as const;
 
@@ -46,4 +50,16 @@ export const MUTATION_OBSERVER_CONFIG = {
   subtree: true,
   attributes: true,
   attributeFilter: ['class', 'style', 'aria-hidden'],
+} as const;
+
+export const LOCAL_TEST_MODE = import.meta.env.VITE_LOCAL_TEST_MODE === 'true';
+
+export const LOCAL_TEST_DEFAULT_WEBSITE = {
+  id: 'local-site-1',
+  name: 'Acme Launchpad',
+  url: 'https://acme.test',
+  description: 'A local testing profile for directory submissions and startup listings.',
+  category: 'SaaS',
+  categories: ['SaaS', 'AI Tools'],
+  tags: ['startup', 'directory', 'automation', 'launch'],
 } as const;
