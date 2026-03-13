@@ -87,6 +87,8 @@ export default defineConfig({
       '@content': resolve(__dirname, './src/content'),
       '@pageController': resolve(__dirname, './src/page-controller'),
       '@pageHook': resolve(__dirname, './src/page-hook'),
+      '@agent': resolve(__dirname, './src/agent'),
+      '@lib': resolve(__dirname, './src/lib'),
     },
   },
   build: {

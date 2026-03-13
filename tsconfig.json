@@ -29,7 +29,9 @@
       "@background/*": ["./src/background/*"],
       "@content/*": ["./src/content/*"],
       "@pageController/*": ["./src/page-controller/*"],
-      "@pageHook/*": ["./src/page-hook/*"]
+      "@pageHook/*": ["./src/page-hook/*"],
+      "@agent/*": ["./src/agent/*"],
+      "@lib/*": ["./src/lib/*"]
     },
     
     "types": [
