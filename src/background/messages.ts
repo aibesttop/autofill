@@ -6,6 +6,9 @@ import { injectPageController, handleTabControl } from './tabs';
 import { startAuthFlow } from './auth';
 import { fetchWebsites, fetchImageAsDataUrl } from './api';
 import { setupContextMenu, removeContextMenu } from './context-menu';
+import { handleTabControlMessage as handleAgentTabControl } from '../agent/TabsController.background';
+import { handlePageControlMessage as handleAgentPageControl } from '../agent/RemotePageController.background';
+import { AGENT_MESSAGE_TYPES } from '../agent/message-types';
 
 // Track tabs with open side panels
 const openSidePanelTabs = new Set<number>();
@@ -225,6 +228,12 @@ export function setupMessageRouter(): void {
       if (!type) return false;
 
       switch (type) {
+        case AGENT_MESSAGE_TYPES.TAB_CONTROL:
+          return handleAgentTabControl(message, sender, sendResponse);
+
+        case AGENT_MESSAGE_TYPES.PAGE_CONTROL:
+          return handleAgentPageControl(message, sender, sendResponse);
+
         case 'TAB_CONTROL':
           return handleTabControl(message, sender, sendResponse);
 

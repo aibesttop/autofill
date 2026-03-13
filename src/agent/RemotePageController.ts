@@ -1,6 +1,7 @@
 import type { BrowserState } from '@page-agent/page-controller';
 
 import type { TabsController } from './TabsController';
+import { AGENT_MESSAGE_TYPES } from './message-types';
 
 const PREFIX = '[RemotePageController]';
 
@@ -9,7 +10,7 @@ function debug(...messages: any[]) {
 }
 
 function sendMessage(message: {
-  type: 'PAGE_CONTROL';
+  type: typeof AGENT_MESSAGE_TYPES.PAGE_CONTROL;
   action: string;
   targetTabId: number;
   payload?: any;
@@ -51,7 +52,7 @@ export class RemotePageController {
   async getLastUpdateTime(): Promise<number> {
     if (!this.currentTabId) throw new Error('tabsController not initialized.');
     return sendMessage({
-      type: 'PAGE_CONTROL',
+      type: AGENT_MESSAGE_TYPES.PAGE_CONTROL,
       action: 'get_last_update_time',
       targetTabId: this.currentTabId,
     });
@@ -76,7 +77,7 @@ export class RemotePageController {
       };
     } else {
       browserState = await sendMessage({
-        type: 'PAGE_CONTROL',
+        type: AGENT_MESSAGE_TYPES.PAGE_CONTROL,
         action: 'get_browser_state',
         targetTabId: this.currentTabId,
       });
@@ -96,7 +97,7 @@ export class RemotePageController {
     }
 
     await sendMessage({
-      type: 'PAGE_CONTROL',
+      type: AGENT_MESSAGE_TYPES.PAGE_CONTROL,
       action: 'update_tree',
       targetTabId: this.currentTabId,
     });
@@ -108,7 +109,7 @@ export class RemotePageController {
     }
 
     await sendMessage({
-      type: 'PAGE_CONTROL',
+      type: AGENT_MESSAGE_TYPES.PAGE_CONTROL,
       action: 'clean_up_highlights',
       targetTabId: this.currentTabId,
     });
@@ -162,7 +163,7 @@ export class RemotePageController {
     }
 
     return sendMessage({
-      type: 'PAGE_CONTROL',
+      type: AGENT_MESSAGE_TYPES.PAGE_CONTROL,
       action: action,
       targetTabId: this.currentTabId!,
       payload,

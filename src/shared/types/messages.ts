@@ -19,6 +19,17 @@ export interface TabChangeMessage extends BaseMessage {
   };
 }
 
+export interface AgentTabChangeMessage extends BaseMessage {
+  type: 'AGENT_TAB_CHANGE';
+  action: 'created' | 'removed' | 'updated';
+  payload: {
+    tab?: chrome.tabs.Tab;
+    tabId?: number;
+    changeInfo?: chrome.tabs.TabChangeInfo;
+    removeInfo?: chrome.tabs.TabRemoveInfo;
+  };
+}
+
 // Content → Background messages
 export interface TabControlMessage extends BaseMessage {
   type: 'TAB_CONTROL';
@@ -40,8 +51,35 @@ export interface TabControlMessage extends BaseMessage {
   };
 }
 
+export interface AgentTabControlMessage extends BaseMessage {
+  type: 'AGENT_TAB_CONTROL';
+  action:
+    | 'get_active_tab'
+    | 'get_tab_info'
+    | 'open_new_tab'
+    | 'create_tab_group'
+    | 'update_tab_group'
+    | 'add_tab_to_group'
+    | 'close_tab';
+  payload?: {
+    tabId?: number;
+    tabIds?: number[];
+    url?: string;
+    groupId?: number;
+    windowId?: number;
+    properties?: chrome.tabGroups.UpdateProperties;
+  };
+}
+
 export interface PageControlMessage extends BaseMessage {
   type: 'PAGE_CONTROL';
+  action: string;
+  payload?: any;
+  targetTabId?: number;
+}
+
+export interface AgentPageControlMessage extends BaseMessage {
+  type: 'AGENT_PAGE_CONTROL';
   action: string;
   payload?: any;
   targetTabId?: number;
@@ -83,10 +121,13 @@ export interface AutoDetectToggleMessage extends BaseMessage {
 export type ExtensionMessage =
   | TabControlMessage
   | PageControlMessage
+  | AgentTabControlMessage
+  | AgentPageControlMessage
   | AuthStartMessage
   | GetWebsitesMessage
   | FetchImageMessage
   | TabChangeMessage
+  | AgentTabChangeMessage
   | OpenPanelMessage
   | ContextMenuToggleMessage
   | PluginToggleMessage

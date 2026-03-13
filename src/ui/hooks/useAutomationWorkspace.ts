@@ -3,6 +3,8 @@ import { STORAGE_KEYS } from '@shared/constants';
 import type { Website } from '@shared/types';
 import { LOCAL_TEST_DEFAULT_WEBSITE, LOCAL_TEST_MODE } from '@shared/testing/local-test';
 import type { FormDetectionResult } from '@content/types';
+import type { HistoricalEvent } from '@page-agent/core';
+import { clearSessions, deleteSession } from '../../lib/db';
 import type { BatchSubmitItem, Task, TaskMetrics, TaskStatus, TaskStep } from '../types/ui';
 
 export interface WebsiteSnapshot {
@@ -42,6 +44,18 @@ export interface QueueBatchResult {
   task: Task;
 }
 
+export interface AgentTaskRecordInput {
+  sessionId?: string;
+  task: string;
+  history: HistoricalEvent[];
+  status: Extract<TaskStatus, 'completed' | 'error'>;
+  websiteId?: string;
+  websiteName?: string;
+  url?: string;
+  createdAt?: number;
+  completedAt?: number;
+}
+
 const DEFAULT_BATCH_STATE: BatchWorkspaceState = {
   draftUrls: '',
   items: [],
@@ -49,6 +63,7 @@ const DEFAULT_BATCH_STATE: BatchWorkspaceState = {
   tasks: [],
   lastRunAt: null,
 };
+const AI_AGENT_TASK_ID_PREFIX = 'ai-agent-';
 
 function createId(prefix: string): string {
   return `${prefix}-${crypto.randomUUID()}`;
@@ -195,13 +210,18 @@ function limitTasks(tasks: Task[]): Task[] {
   return tasks.slice(0, 50);
 }
 
-function createTaskStep(name: string, status: TaskStatus, message?: string): TaskStep {
+function createTaskStep(
+  name: string,
+  status: TaskStatus,
+  message?: string,
+  timestamp: number = Date.now()
+): TaskStep {
   return {
     id: createId('step'),
     name,
     status,
     message,
-    timestamp: Date.now(),
+    timestamp,
   };
 }
 
@@ -224,6 +244,118 @@ function buildBatchMetrics(items: BatchSubmitItem[]): TaskMetrics {
 function buildBatchSummary(items: BatchSubmitItem[]): string {
   const metrics = buildBatchMetrics(items);
   return `${metrics.completed || 0}/${metrics.total || 0} URLs launched${metrics.failed ? `, ${metrics.failed} failed` : ''}`;
+}
+
+function upsertTask(tasks: Task[], task: Task): Task[] {
+  return limitTasks([task, ...tasks.filter((existingTask) => existingTask.id !== task.id)]);
+}
+
+function truncateText(value: string, maxLength: number): string {
+  return value.length > maxLength ? `${value.slice(0, maxLength - 1)}…` : value;
+}
+
+function getAgentSummary(history: HistoricalEvent[], fallbackTask: string): string {
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const event = history[index];
+
+    if (event.type === 'step') {
+      const action = event.action;
+      if (action?.name !== 'done') {
+        continue;
+      }
+
+      if (
+        isPlainObject(action.input) &&
+        typeof action.input.text === 'string' &&
+        action.input.text.trim().length > 0
+      ) {
+        return truncateText(action.input.text.trim(), 180);
+      }
+
+      if (typeof action.output === 'string' && action.output.trim().length > 0) {
+        return truncateText(action.output.trim(), 180);
+      }
+    }
+
+    if (event.type === 'error' && event.message.trim().length > 0) {
+      return truncateText(event.message.trim(), 180);
+    }
+  }
+
+  return truncateText(fallbackTask, 180);
+}
+
+function buildAgentTaskSteps(history: HistoricalEvent[], baseTimestamp: number): TaskStep[] {
+  const steps = history.flatMap((event, index) => {
+    const timestamp = baseTimestamp + index;
+
+    if (event.type === 'step') {
+      const action = event.action;
+      const stepIndex = typeof event.stepIndex === 'number' ? event.stepIndex + 1 : index + 1;
+
+      if (action?.name === 'done') {
+        const succeeded =
+          !isPlainObject(action.input) || action.input.success !== false;
+
+        return [
+          createTaskStep(
+            succeeded ? 'Agent completed' : 'Agent failed',
+            succeeded ? 'completed' : 'error',
+            typeof action.output === 'string' ? truncateText(action.output, 180) : undefined,
+            timestamp
+          ),
+        ];
+      }
+
+      return [
+        createTaskStep(
+          `Step ${stepIndex}${action?.name ? ` · ${action.name}` : ''}`,
+          'completed',
+          typeof action?.output === 'string' ? truncateText(action.output, 180) : undefined,
+          timestamp
+        ),
+      ];
+    }
+
+    if (event.type === 'observation') {
+      return [createTaskStep('Observation', 'completed', truncateText(event.content, 180), timestamp)];
+    }
+
+    if (event.type === 'retry') {
+      return [
+        createTaskStep(
+          `Retry ${event.attempt}/${event.maxAttempts}`,
+          'pending',
+          truncateText(event.message, 180),
+          timestamp
+        ),
+      ];
+    }
+
+    if (event.type === 'error') {
+      return [createTaskStep('Error', 'error', truncateText(event.message, 180), timestamp)];
+    }
+
+    return [];
+  });
+
+  return steps.length > 0
+    ? steps
+    : [createTaskStep('Agent run', 'completed', 'No detailed history was captured.', baseTimestamp)];
+}
+
+function buildAgentTaskMetrics(steps: TaskStep[]): TaskMetrics {
+  return {
+    total: steps.length,
+    completed: steps.filter((step) => step.status === 'completed').length,
+    failed: steps.filter((step) => step.status === 'error').length,
+  };
+}
+
+function getAgentSessionId(taskId: string): string | null {
+  return taskId.startsWith(AI_AGENT_TASK_ID_PREFIX)
+    ? taskId.slice(AI_AGENT_TASK_ID_PREFIX.length)
+    : null;
 }
 
 function parseBatchUrls(input: string): { validUrls: string[]; invalidUrls: string[] } {
@@ -356,7 +488,36 @@ export async function recordQuickDiscoverTask(result: FormDetectionResult): Prom
 
   await persistBatchState({
     ...workspace.batchState,
-    tasks: limitTasks([task, ...workspace.batchState.tasks]),
+    tasks: upsertTask(workspace.batchState.tasks, task),
+  });
+
+  return task;
+}
+
+export async function recordAgentTask(input: AgentTaskRecordInput): Promise<Task> {
+  const workspace = await readWorkspaceStorage();
+  const createdAt = input.createdAt ?? Date.now();
+  const steps = buildAgentTaskSteps(input.history, createdAt);
+  const metrics = buildAgentTaskMetrics(steps);
+  const task: Task = {
+    id: input.sessionId ? `ai-agent-${input.sessionId}` : createId('task'),
+    type: 'ai_agent',
+    title: `AI Agent · ${truncateText(input.task, 72)}`,
+    status: input.status,
+    url: input.url,
+    summary: getAgentSummary(input.history, input.task),
+    websiteId: input.websiteId,
+    websiteName: input.websiteName,
+    metrics,
+    steps,
+    createdAt,
+    completedAt: input.completedAt ?? createdAt,
+    error: input.status === 'error' ? getAgentSummary(input.history, input.task) : undefined,
+  };
+
+  await persistBatchState({
+    ...workspace.batchState,
+    tasks: upsertTask(workspace.batchState.tasks, task),
   });
 
   return task;
@@ -733,6 +894,8 @@ export function useAutomationWorkspace() {
       tasks: [],
       activeTaskId: null,
     });
+
+    await clearSessions();
   };
 
   const removeTask = async (taskId: string) => {
@@ -741,6 +904,11 @@ export function useAutomationWorkspace() {
       activeTaskId: state.batchState.activeTaskId === taskId ? null : state.batchState.activeTaskId,
       tasks: state.batchState.tasks.filter((task) => task.id !== taskId),
     });
+
+    const agentSessionId = getAgentSessionId(taskId);
+    if (agentSessionId) {
+      await deleteSession(agentSessionId);
+    }
   };
 
   return {

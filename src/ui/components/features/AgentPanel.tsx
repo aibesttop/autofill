@@ -10,6 +10,7 @@ import type { ExtConfig, LanguagePreference } from '../../../agent/useAgent';
 import { DEFAULT_API_KEY, DEFAULT_BASE_URL, DEFAULT_MODEL } from '../../../agent/constants';
 import { saveSession, listSessions, deleteSession, clearSessions, getSession } from '../../../lib/db';
 import type { SessionRecord } from '../../../lib/db';
+import { recordAgentTask, useAutomationWorkspace } from '../../hooks/useAutomationWorkspace';
 import type {
   AgentActivity,
   AgentStepEvent,
@@ -884,6 +885,7 @@ export const AgentPanel: React.FC = () => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const { status, history, activity, currentTask, config, execute, stop, configure } = useAgent();
+  const { selectedWebsiteSnapshot } = useAutomationWorkspace();
 
   // Persist session when task finishes
   const prevStatusRef = useRef(status);
@@ -892,16 +894,61 @@ export const AgentPanel: React.FC = () => {
     prevStatusRef.current = status;
 
     if (
-      prev === 'running' &&
-      (status === 'completed' || status === 'error') &&
-      history.length > 0 &&
-      currentTask
+      prev !== 'running' ||
+      (status !== 'completed' && status !== 'error') ||
+      history.length === 0 ||
+      !currentTask
     ) {
-      saveSession({ task: currentTask, history, status }).catch((err) =>
-        console.error('[AgentPanel] Failed to save session:', err)
-      );
+      return;
     }
-  }, [status, history, currentTask]);
+
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const savedSession = await saveSession({ task: currentTask, history, status });
+
+        if (cancelled) {
+          return;
+        }
+
+        await recordAgentTask({
+          sessionId: savedSession.id,
+          task: currentTask,
+          history,
+          status,
+          websiteId: selectedWebsiteSnapshot?.id,
+          websiteName: selectedWebsiteSnapshot?.name,
+          url: selectedWebsiteSnapshot?.url,
+          createdAt: savedSession.createdAt,
+          completedAt: savedSession.createdAt,
+        });
+      } catch (saveError) {
+        console.error('[AgentPanel] Failed to persist agent session:', saveError);
+
+        if (cancelled) {
+          return;
+        }
+
+        try {
+          await recordAgentTask({
+            task: currentTask,
+            history,
+            status,
+            websiteId: selectedWebsiteSnapshot?.id,
+            websiteName: selectedWebsiteSnapshot?.name,
+            url: selectedWebsiteSnapshot?.url,
+          });
+        } catch (recordError) {
+          console.error('[AgentPanel] Failed to sync agent task history:', recordError);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [status, history, currentTask, selectedWebsiteSnapshot]);
 
   // Auto-scroll
   useEffect(() => {

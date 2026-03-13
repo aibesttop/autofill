@@ -1,14 +1,16 @@
 /**
  * Content script for RemotePageController
- * Initializes PageController and handles PAGE_CONTROL messages from the service worker
+ * Initializes PageController and handles agent page-control messages from the service worker
  */
 import { PageController } from '@page-agent/page-controller';
+
+const AGENT_PAGE_CONTROL = 'AGENT_PAGE_CONTROL' as const;
 
 export function initPageController() {
   let pageController: PageController | null = null;
 
   const myTabIdPromise = chrome.runtime
-    .sendMessage({ type: 'PAGE_CONTROL', action: 'get_my_tab_id' })
+    .sendMessage({ type: AGENT_PAGE_CONTROL, action: 'get_my_tab_id' })
     .then((response) => {
       return (response as { tabId: number | null }).tabId;
     })
@@ -54,9 +56,9 @@ export function initPageController() {
     }
   }, 500);
 
-  // Handle PAGE_CONTROL messages from the service worker
+  // Handle agent page-control messages from the service worker
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse): true | undefined => {
-    if (message.type !== 'PAGE_CONTROL') {
+    if (message.type !== AGENT_PAGE_CONTROL) {
       return;
     }
 
@@ -89,7 +91,7 @@ export function initPageController() {
       default:
         sendResponse({
           success: false,
-          error: `Unknown PAGE_CONTROL action: ${action}`,
+          error: `Unknown agent page-control action: ${action}`,
         });
     }
 

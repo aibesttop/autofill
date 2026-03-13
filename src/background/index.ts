@@ -5,6 +5,7 @@
 import { setupTabListeners } from './tabs';
 import { setupMessageRouter } from './messages';
 import { setupContextMenu, setupContextMenuListener } from './context-menu';
+import { setupTabChangeEvents } from '../agent/TabsController.background';
 
 const TAG = '[autofill Background]';
 
@@ -79,6 +80,7 @@ function initialize(): void {
   setupSidePanel();
   syncContextMenuState();
   setupTabListeners();
+  setupTabChangeEvents();
   setupMessageRouter();
   setupContextMenuListener();
   handleInstall();

@@ -1,3 +1,5 @@
+import { AGENT_MESSAGE_TYPES } from './message-types';
+
 const PREFIX = '[TabsController]';
 
 function debug(...messages: any[]) {
@@ -5,7 +7,7 @@ function debug(...messages: any[]) {
 }
 
 function sendMessage(message: {
-  type: 'TAB_CONTROL';
+  type: typeof AGENT_MESSAGE_TYPES.TAB_CONTROL;
   action: TabAction;
   payload?: any;
 }): Promise<any> {
@@ -40,7 +42,7 @@ export class TabsController extends EventTarget {
     this.windowId = null;
 
     const result = await sendMessage({
-      type: 'TAB_CONTROL',
+      type: AGENT_MESSAGE_TYPES.TAB_CONTROL,
       action: 'get_active_tab',
     });
 
@@ -54,7 +56,7 @@ export class TabsController extends EventTarget {
       this.currentTabId = this.initialTabId;
 
       const info = await sendMessage({
-        type: 'TAB_CONTROL',
+        type: AGENT_MESSAGE_TYPES.TAB_CONTROL,
         action: 'get_tab_info',
         payload: { tabId: this.initialTabId },
       });
@@ -71,7 +73,7 @@ export class TabsController extends EventTarget {
     await this.updateCurrentTabId(this.currentTabId);
 
     const tabChangeHandler = (message: any): void => {
-      if (message.type !== 'TAB_CHANGE') {
+      if (message.type !== AGENT_MESSAGE_TYPES.TAB_CHANGE) {
         return;
       }
 
@@ -119,7 +121,7 @@ export class TabsController extends EventTarget {
     debug('openNewTab', url);
 
     const result = await sendMessage({
-      type: 'TAB_CONTROL',
+      type: AGENT_MESSAGE_TYPES.TAB_CONTROL,
       action: 'open_new_tab',
       payload: { url },
     });
@@ -142,7 +144,7 @@ export class TabsController extends EventTarget {
 
     if (!this.tabGroupId) {
       const groupResult = await sendMessage({
-        type: 'TAB_CONTROL',
+        type: AGENT_MESSAGE_TYPES.TAB_CONTROL,
         action: 'create_tab_group',
         payload: { tabIds: [tabId], windowId: this.windowId },
       });
@@ -154,7 +156,7 @@ export class TabsController extends EventTarget {
       this.tabGroupId = groupResult.groupId as number;
 
       await sendMessage({
-        type: 'TAB_CONTROL',
+        type: AGENT_MESSAGE_TYPES.TAB_CONTROL,
         action: 'update_tab_group',
         payload: {
           groupId: this.tabGroupId,
@@ -167,7 +169,7 @@ export class TabsController extends EventTarget {
       });
     } else {
       await sendMessage({
-        type: 'TAB_CONTROL',
+        type: AGENT_MESSAGE_TYPES.TAB_CONTROL,
         action: 'add_tab_to_group',
         payload: { tabId: result.tabId, groupId: this.tabGroupId },
       });
@@ -203,7 +205,7 @@ export class TabsController extends EventTarget {
     }
 
     const result = await sendMessage({
-      type: 'TAB_CONTROL',
+      type: AGENT_MESSAGE_TYPES.TAB_CONTROL,
       action: 'close_tab',
       payload: { tabId },
     });
@@ -240,7 +242,7 @@ export class TabsController extends EventTarget {
 
     debug('getTabInfo: pulling from background script', tabId);
     const result = await sendMessage({
-      type: 'TAB_CONTROL',
+      type: AGENT_MESSAGE_TYPES.TAB_CONTROL,
       action: 'get_tab_info',
       payload: { tabId },
     });

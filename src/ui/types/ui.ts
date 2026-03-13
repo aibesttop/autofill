@@ -26,7 +26,7 @@ export interface TaskMetrics {
 
 export interface Task {
   id: string;
-  type: 'quick_fill' | 'quick_discover' | 'batch_submit';
+  type: 'quick_fill' | 'quick_discover' | 'batch_submit' | 'ai_agent';
   title?: string;
   status: TaskStatus;
   url?: string;

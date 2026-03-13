@@ -3,8 +3,15 @@
  * - redirects messages from RemotePageController (Agent, extension pages) to ContentScript
  */
 
+import { AGENT_MESSAGE_TYPES } from './message-types';
+
 export function handlePageControlMessage(
-  message: { type: 'PAGE_CONTROL'; action: string; payload: any; targetTabId: number },
+  message: {
+    type: typeof AGENT_MESSAGE_TYPES.PAGE_CONTROL;
+    action: string;
+    payload: any;
+    targetTabId: number;
+  },
   sender: chrome.runtime.MessageSender,
   sendResponse: (response: unknown) => void
 ): true | undefined {
@@ -25,7 +32,7 @@ export function handlePageControlMessage(
   // proxy to content script
   chrome.tabs
     .sendMessage(targetTabId, {
-      type: 'PAGE_CONTROL',
+      type: AGENT_MESSAGE_TYPES.PAGE_CONTROL,
       action,
       payload,
     })

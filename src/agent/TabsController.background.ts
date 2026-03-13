@@ -3,6 +3,7 @@
  * Handles TAB_CONTROL messages and broadcasts tab change events
  */
 import type { TabAction } from './TabsController';
+import { AGENT_MESSAGE_TYPES } from './message-types';
 
 const PREFIX = '[TabsController.background]';
 
@@ -11,8 +12,8 @@ function debug(...messages: any[]) {
 }
 
 export function handleTabControlMessage(
-  message: { type: 'TAB_CONTROL'; action: TabAction; payload: any },
-  sender: chrome.runtime.MessageSender,
+  message: { type: typeof AGENT_MESSAGE_TYPES.TAB_CONTROL; action: TabAction; payload: any },
+  _sender: chrome.runtime.MessageSender,
   sendResponse: (response: unknown) => void
 ): true | undefined {
   const { action, payload } = message;
@@ -127,7 +128,11 @@ export function setupTabChangeEvents() {
   chrome.tabs.onCreated.addListener((tab) => {
     debug('onCreated', tab);
     chrome.runtime
-      .sendMessage({ type: 'TAB_CHANGE', action: 'created', payload: { tab } })
+      .sendMessage({
+        type: AGENT_MESSAGE_TYPES.TAB_CHANGE,
+        action: 'created',
+        payload: { tab },
+      })
       .catch((error) => {
         debug('onCreated error:', error);
       });
@@ -137,7 +142,7 @@ export function setupTabChangeEvents() {
     debug('onRemoved', tabId, removeInfo);
     chrome.runtime
       .sendMessage({
-        type: 'TAB_CHANGE',
+        type: AGENT_MESSAGE_TYPES.TAB_CHANGE,
         action: 'removed',
         payload: { tabId, removeInfo },
       })
@@ -150,7 +155,7 @@ export function setupTabChangeEvents() {
     debug('onUpdated', tabId, changeInfo);
     chrome.runtime
       .sendMessage({
-        type: 'TAB_CHANGE',
+        type: AGENT_MESSAGE_TYPES.TAB_CHANGE,
         action: 'updated',
         payload: { tabId, changeInfo, tab },
       })

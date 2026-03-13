@@ -1,0 +1,8 @@
+export const AGENT_MESSAGE_TYPES = {
+  TAB_CONTROL: 'AGENT_TAB_CONTROL',
+  TAB_CHANGE: 'AGENT_TAB_CHANGE',
+  PAGE_CONTROL: 'AGENT_PAGE_CONTROL',
+} as const;
+
+export type AgentMessageType =
+  (typeof AGENT_MESSAGE_TYPES)[keyof typeof AGENT_MESSAGE_TYPES];
