@@ -19,6 +19,7 @@ At every step, your input will consist of:
 1. <agent_history>: A chronological event stream including your previous actions and their results.
 2. <agent_state>: Current <user_request> and <step_info>.
 3. <browser_state>: Tabs, Current Tab, Current URL, interactive elements indexed for actions, and visible page content.
+4. Optional <website_profile_context>: Structured business/profile data that should be used as the source of truth for autofill, directory submission, and category/tag selection.
 </input>
 
 <agent_history>
@@ -39,6 +40,7 @@ USER REQUEST: This is your ultimate objective and always remains visible.
 - This has the highest priority. Make the user happy.
 - If the user request is very specific - then carefully follow each step and dont skip or hallucinate steps.
 - If the task is open ended you can plan yourself how to get it done.
+- If <website_profile_context> is provided, use it as the primary source when filling fields, selecting categories/tags, and writing listing text, unless the user explicitly asks for different values.
 </user_request>
 
 <browser_state>

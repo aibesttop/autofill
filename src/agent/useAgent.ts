@@ -12,6 +12,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { MultiPageAgent } from './MultiPageAgent';
 import { DEFAULT_CONFIG, migrateLegacyEndpoint } from './constants';
+import { buildAgentTaskWithProfileContext } from './task-context';
+import type { AgentWebsiteProfileContext } from './task-context';
 
 /** Language preference: undefined means follow system */
 export type LanguagePreference = SupportedLanguage | undefined;
@@ -37,13 +39,18 @@ export interface UseAgentResult {
   configure: (config: ExtConfig) => Promise<void>;
 }
 
-export function useAgent(): UseAgentResult {
+export interface UseAgentOptions {
+  websiteProfile?: AgentWebsiteProfileContext | null;
+}
+
+export function useAgent(options: UseAgentOptions = {}): UseAgentResult {
   const agentRef = useRef<MultiPageAgent | null>(null);
   const [status, setStatus] = useState<AgentStatus>('idle');
   const [history, setHistory] = useState<HistoricalEvent[]>([]);
   const [activity, setActivity] = useState<AgentActivity | null>(null);
   const [currentTask, setCurrentTask] = useState('');
   const [config, setConfig] = useState<ExtConfig | null>(null);
+  const { websiteProfile = null } = options;
 
   useEffect(() => {
     chrome.storage.local.get(['llmConfig', 'language', 'advancedConfig']).then((result) => {
@@ -110,8 +117,8 @@ export function useAgent(): UseAgentResult {
 
     setCurrentTask(task);
     setHistory([]);
-    await agent.execute(task);
-  }, []);
+    await agent.execute(buildAgentTaskWithProfileContext(task, websiteProfile));
+  }, [websiteProfile]);
 
   const stop = useCallback(() => {
     agentRef.current?.stop();

@@ -8,6 +8,7 @@ import { css, keyframes } from '@emotion/react';
 import { useAgent } from '../../../agent/useAgent';
 import type { ExtConfig, LanguagePreference } from '../../../agent/useAgent';
 import { DEFAULT_API_KEY, DEFAULT_BASE_URL, DEFAULT_MODEL } from '../../../agent/constants';
+import type { AgentWebsiteProfileContext } from '../../../agent/task-context';
 import { saveSession, listSessions, deleteSession, clearSessions, getSession } from '../../../lib/db';
 import type { SessionRecord } from '../../../lib/db';
 import { recordAgentTask, useAutomationWorkspace } from '../../hooks/useAutomationWorkspace';
@@ -118,6 +119,27 @@ const TaskText = styled.div`
   font-size: 12px;
   font-weight: 500;
   color: #334155;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+`;
+
+const ContextBar = styled.div`
+  padding: 8px 16px;
+  background: #eef2ff;
+  border-bottom: 1px solid #dbe4ff;
+`;
+
+const ContextLabel = styled.div`
+  font-size: 10px;
+  color: #6366f1;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+`;
+
+const ContextText = styled.div`
+  font-size: 12px;
+  color: #4338ca;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -883,9 +905,22 @@ export const AgentPanel: React.FC = () => {
   const [inputValue, setInputValue] = useState('');
   const historyRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  const { status, history, activity, currentTask, config, execute, stop, configure } = useAgent();
   const { selectedWebsiteSnapshot } = useAutomationWorkspace();
+  const websiteProfileContext: AgentWebsiteProfileContext | null = selectedWebsiteSnapshot
+    ? {
+        id: selectedWebsiteSnapshot.id,
+        name: selectedWebsiteSnapshot.name,
+        url: selectedWebsiteSnapshot.url,
+        category: selectedWebsiteSnapshot.category,
+        categories: selectedWebsiteSnapshot.categories,
+        description: selectedWebsiteSnapshot.description,
+        tags: selectedWebsiteSnapshot.tags,
+      }
+    : null;
+
+  const { status, history, activity, currentTask, config, execute, stop, configure } = useAgent({
+    websiteProfile: websiteProfileContext,
+  });
 
   // Persist session when task finishes
   const prevStatusRef = useRef(status);
@@ -1046,6 +1081,25 @@ export const AgentPanel: React.FC = () => {
         </TaskBar>
       )}
 
+      {selectedWebsiteSnapshot && (
+        <ContextBar>
+          <ContextLabel>Profile Context</ContextLabel>
+          <ContextText
+            title={[
+              selectedWebsiteSnapshot.name,
+              selectedWebsiteSnapshot.category,
+              selectedWebsiteSnapshot.url,
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+          >
+            {selectedWebsiteSnapshot.name}
+            {selectedWebsiteSnapshot.category ? ` · ${selectedWebsiteSnapshot.category}` : ''}
+            {selectedWebsiteSnapshot.url ? ` · ${selectedWebsiteSnapshot.url}` : ''}
+          </ContextText>
+        </ContextBar>
+      )}
+
       <HistoryArea ref={historyRef}>
         {showEmptyState && (
           <EmptyStateContainer>
@@ -1054,6 +1108,12 @@ export const AgentPanel: React.FC = () => {
               Describe a task to automate browser actions using AI.
               <br />
               The agent can navigate pages, fill forms, click buttons, and more.
+              {selectedWebsiteSnapshot ? (
+                <>
+                  <br />
+                  Active profile: {selectedWebsiteSnapshot.name}
+                </>
+              ) : null}
             </EmptyStateDesc>
           </EmptyStateContainer>
         )}
