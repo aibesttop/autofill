@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Card } from '../shared/Card';
 import { Button } from '../shared/Button';
 import { useActiveTab } from '../../hooks/useActiveTab';
+import { recordQuickDiscoverTask } from '../../hooks/useAutomationWorkspace';
 import type { FormDetectionResult } from '@content/types';
 import * as S from './QuickDiscover.styles';
 
@@ -51,6 +52,7 @@ export const QuickDiscover: React.FC = () => {
       }
 
       setAnalysis(response.result);
+      void recordQuickDiscoverTask(response.result);
     } catch (nextError) {
       setAnalysis(null);
       setError(

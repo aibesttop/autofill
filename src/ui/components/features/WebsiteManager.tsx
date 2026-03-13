@@ -1,5 +1,4 @@
-import { useEffect, useState } from 'react';
-import type { Website as ApiWebsite } from '@shared/types';
+import { useWebsites } from '../../hooks/useWebsites';
 import { Button } from '../shared/Button';
 import { Card } from '../shared/Card';
 import * as S from './WebsiteManager.styles';
@@ -15,35 +14,7 @@ function formatDate(value: string): string {
 }
 
 export const WebsiteManager: React.FC = () => {
-  const [websites, setWebsites] = useState<ApiWebsite[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const loadWebsites = async () => {
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const response = await chrome.runtime.sendMessage({ type: 'getWebsites' });
-
-      if (!response || !Array.isArray(response.websites)) {
-        throw new Error('Unexpected website response');
-      }
-
-      setWebsites(response.websites);
-    } catch (nextError) {
-      setWebsites([]);
-      setError(
-        nextError instanceof Error ? nextError.message : 'Failed to load websites'
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    void loadWebsites();
-  }, []);
+  const { websites, isLoading, error, refresh } = useWebsites();
 
   return (
     <S.Container>
@@ -52,7 +23,7 @@ export const WebsiteManager: React.FC = () => {
           <S.Title>🌐 Website Profiles</S.Title>
           <S.Description>Review the websites returned by your authenticated autofill account</S.Description>
         </div>
-        <Button variant="secondary" onClick={() => void loadWebsites()} isLoading={isLoading}>
+        <Button variant="secondary" onClick={() => void refresh()} isLoading={isLoading}>
           Refresh
         </Button>
       </S.Header>
