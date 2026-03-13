@@ -5,6 +5,8 @@
 import type { ContentMessageType } from './types';
 import { getStorageManager } from './storage';
 import { getTwitterDetector } from './twitter';
+import { FormFieldDetector } from './form-detector';
+import type { DetectedFormField, FormDetectionResult } from './types';
 
 export class ContentMessageHandler {
   async handleMessage(
@@ -26,6 +28,8 @@ export class ContentMessageHandler {
           return this.handleContextMenu();
         case 'floatingButton:toggle':
           return this.handleFloatingButtonToggle(payload);
+        case 'form:detect':
+          return this.handleFormDetect();
         default:
           console.warn('[Content Messaging] Unknown message type:', type);
           return { success: false, error: 'Unknown message type' };
@@ -97,6 +101,78 @@ export class ContentMessageHandler {
     await storage.update('floatingButton', payload.enabled);
     console.log('[Content Messaging] Floating button toggled:', payload.enabled);
     return { success: true, enabled: payload.enabled };
+  }
+
+  private handleFormDetect() {
+    const detector = new FormFieldDetector();
+    const fields = detector.detect();
+    const serializedFields: DetectedFormField[] = fields.map((field) => ({
+      type: field.type,
+      name: field.name,
+      label: field.label,
+      placeholder: field.placeholder,
+      autocompleteType: field.autocompleteType,
+    }));
+
+    const fieldTypes = serializedFields.reduce<Record<string, number>>((result, field) => {
+      result[field.type] = (result[field.type] ?? 0) + 1;
+      return result;
+    }, {});
+
+    const result: FormDetectionResult = {
+      pageTitle: document.title,
+      pageUrl: window.location.href,
+      fieldCount: serializedFields.length,
+      formCount: Math.max(document.querySelectorAll('form').length, serializedFields.length > 0 ? 1 : 0),
+      submitButtonCount: this.countSubmitButtons(),
+      fieldTypes,
+      fields: serializedFields,
+    };
+
+    return { success: true, result };
+  }
+
+  private countSubmitButtons(): number {
+    const candidates = document.querySelectorAll('button, input[type="submit"], [role="button"]');
+    let count = 0;
+
+    candidates.forEach((element) => {
+      if (this.isLikelySubmitControl(element)) {
+        count += 1;
+      }
+    });
+
+    return count;
+  }
+
+  private isLikelySubmitControl(element: Element): boolean {
+    if (element instanceof HTMLInputElement) {
+      if (element.type === 'submit') {
+        return true;
+      }
+
+      return /submit|apply|continue|next|save|send/i.test(element.value || '');
+    }
+
+    if (!(element instanceof HTMLElement)) {
+      return false;
+    }
+
+    if (element instanceof HTMLButtonElement && element.type === 'submit') {
+      return true;
+    }
+
+    const text = [
+      element.textContent,
+      element.getAttribute('aria-label'),
+      element.getAttribute('title'),
+      element.getAttribute('value'),
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+
+    return /submit|apply|continue|next|register|join|save|send/i.test(text);
   }
 }
 

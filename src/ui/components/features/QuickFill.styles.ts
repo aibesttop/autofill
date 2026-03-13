@@ -11,16 +11,50 @@ export const List = styled.div`display: flex; flex-direction: column; gap: 12px;
 export const ListItem = styled.div`display: flex; align-items: center; gap: 12px;`;
 export const ListIcon = styled.span`font-size: 20px;`;
 export const ListText = styled.span`font-size: 14px; color: #4a5568;`;
-export const Setting = styled.div`
+export const StatusRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.08), rgba(118, 75, 162, 0.08));
+  border: 1px solid rgba(102, 126, 234, 0.18);
+  border-radius: 10px;
+`;
+export const StatusBadge = styled.span<{ active: boolean }>`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 84px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  ${({ active }) =>
+    active
+      ? css`
+          background: rgba(72, 187, 120, 0.16);
+          color: #2f855a;
+        `
+      : css`
+          background: rgba(229, 62, 62, 0.12);
+          color: #c53030;
+        `}
+`;
+export const StatusText = styled.p`margin: 0; font-size: 13px; line-height: 1.5; color: #4a5568;`;
+export const Setting = styled.div<{ disabled?: boolean }>`
   display: flex; align-items: center; justify-content: space-between;
   padding: 12px 0; border-bottom: 1px solid #e2e8f0;
   &:last-child { border-bottom: none; }
+  ${({ disabled }) => disabled && css`opacity: 0.6;`}
 `;
-export const SettingLabel = styled.span`font-size: 14px; color: #2d3748;`;
+export const SettingCopy = styled.div`display: flex; flex-direction: column; gap: 4px; max-width: 420px;`;
+export const SettingLabel = styled.span`font-size: 14px; font-weight: 600; color: #2d3748;`;
+export const SettingDescription = styled.span`font-size: 12px; line-height: 1.45; color: #718096;`;
 export const Toggle = styled.input`
   width: 44px; height: 24px; appearance: none; background: #cbd5e0;
   border-radius: 12px; position: relative; cursor: pointer; transition: background 150ms ease;
   &:checked { background: #667eea; }
+  &:disabled { cursor: not-allowed; opacity: 0.6; }
   &::before {
     content: ''; position: absolute; width: 20px; height: 20px;
     background: white; border-radius: 50%; top: 2px; left: 2px;
@@ -29,3 +63,5 @@ export const Toggle = styled.input`
   &:checked::before { transform: translateX(20px); }
 `;
 export const Actions = styled.div`display: flex; gap: 12px; margin-top: 24px;`;
+export const LoadingText = styled.p`margin: 0; font-size: 13px; color: #718096;`;
+export const ErrorText = styled.p`margin: 0; font-size: 13px; color: #e53e3e;`;

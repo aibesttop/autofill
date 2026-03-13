@@ -15,6 +15,7 @@ export const STORAGE_KEYS = {
   PLUGIN_ENABLED: 'pluginEnabled',
   CONTEXT_MENU_ENABLED: 'contextMenuEnabled',
   AUTO_DETECT: 'autoDetect',
+  FLOATING_BUTTON: 'floatingButton',
   BATCH_STATE: 'batchState',
   SELECTED_WEBSITE_ID: 'selectedWebsiteId',
   SELECTED_WEBSITE_SNAPSHOT: 'selectedWebsiteSnapshot',

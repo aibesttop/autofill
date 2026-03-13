@@ -97,6 +97,6 @@ export function throttle<T extends (...args: any[]) => any>(
 /**
  * Convert array-like to array
  */
-export function toArray<T>(arrayLike: NodeListOf<T> | HTMLCollectionOf<T>): T[] {
+export function toArray<T extends Element>(arrayLike: NodeListOf<T> | HTMLCollectionOf<T>): T[] {
   return Array.from(arrayLike);
 }

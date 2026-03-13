@@ -10,6 +10,20 @@ const TAG = '[autofill Background]';
 
 console.log(TAG, 'Initializing...');
 
+function syncContextMenuState(): void {
+  chrome.storage.local.get(['pluginEnabled', 'contextMenuEnabled'], (result) => {
+    const pluginEnabled = result.pluginEnabled !== false;
+    const contextMenuEnabled = result.contextMenuEnabled !== false;
+
+    if (pluginEnabled && contextMenuEnabled) {
+      setupContextMenu();
+      return;
+    }
+
+    chrome.contextMenus.removeAll();
+  });
+}
+
 /**
  * Setup side panel behavior
  */
@@ -31,15 +45,7 @@ function handleInstall(): void {
     console.log(TAG, 'Extension installed/updated');
 
     setupSidePanel();
-
-    chrome.storage.local.get(['pluginEnabled', 'contextMenuEnabled'], (result) => {
-      const pluginEnabled = result.pluginEnabled !== false;
-      const contextMenuEnabled = result.contextMenuEnabled === true;
-
-      if (pluginEnabled && contextMenuEnabled) {
-        setupContextMenu();
-      }
-    });
+    syncContextMenuState();
   });
 }
 
@@ -70,6 +76,8 @@ function handleActionClick(): void {
 function initialize(): void {
   console.log(TAG, 'Setting up event listeners...');
 
+  setupSidePanel();
+  syncContextMenuState();
   setupTabListeners();
   setupMessageRouter();
   setupContextMenuListener();

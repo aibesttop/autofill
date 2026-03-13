@@ -8,7 +8,8 @@ export type ContentMessageType =
   | 'insert'
   | 'sidepanel:toggle'
   | 'contextmenu:open-panel'
-  | 'floatingButton:toggle';
+  | 'floatingButton:toggle'
+  | 'form:detect';
 
 export interface PluginState {
   enabled: boolean;
@@ -18,12 +19,30 @@ export interface PluginState {
 }
 
 export interface FormField {
-  element: HTMLInputElement | HTMLTextAreaElement | HTMLElement;
+  element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | HTMLElement;
   type: string;
   name: string;
   label?: string;
   placeholder?: string;
   autocompleteType?: string;
+}
+
+export interface DetectedFormField {
+  type: string;
+  name: string;
+  label?: string;
+  placeholder?: string;
+  autocompleteType?: string;
+}
+
+export interface FormDetectionResult {
+  pageTitle: string;
+  pageUrl: string;
+  fieldCount: number;
+  formCount: number;
+  submitButtonCount: number;
+  fieldTypes: Record<string, number>;
+  fields: DetectedFormField[];
 }
 
 export interface AIButtonConfig {

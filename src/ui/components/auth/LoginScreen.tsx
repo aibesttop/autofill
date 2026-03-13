@@ -3,7 +3,7 @@ import { Button } from '../shared/Button';
 import * as S from './LoginScreen.styles';
 
 export const LoginScreen: React.FC = () => {
-  const { isAuthenticated, login, isLoading } = useAuth();
+  const { isAuthenticated, login, isLoading, error } = useAuth();
 
   if (isAuthenticated) return null;
 
@@ -23,6 +23,7 @@ export const LoginScreen: React.FC = () => {
       <Button onClick={handleLogin} isLoading={isLoading} fullWidth size="lg">
         Sign In with autofill
       </Button>
+      {error ? <S.ErrorText>{error}</S.ErrorText> : null}
       <S.FooterText>
         By signing in, you agree to our Terms of Service and Privacy Policy
       </S.FooterText>

@@ -11,7 +11,7 @@ export class FormFieldDetector {
   detect(): FormField[] {
     this.detectedFields.clear();
 
-    const inputs = document.querySelectorAll('input, textarea');
+    const inputs = document.querySelectorAll('input, textarea, select');
     let count = 0;
 
     for (const element of inputs) {
@@ -30,21 +30,27 @@ export class FormFieldDetector {
   }
 
   private isValidFormField(element: HTMLElement): boolean {
-    if (!(element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement)) {
-      return false;
+    if (element instanceof HTMLSelectElement) {
+      if (this.isHidden(element)) return false;
+      if (element.disabled) return false;
+      return true;
     }
 
-    const input = element;
-    const type = input.type?.toLowerCase() || 'text';
+    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+      const input = element;
+      const type = input.type?.toLowerCase() || 'text';
 
-    if (!FORM_SELECTORS.INPUT_TYPES.includes(type) && type !== 'textarea') {
-      return false;
+      if (!FORM_SELECTORS.INPUT_TYPES.some((allowedType) => allowedType === type) && type !== 'textarea') {
+        return false;
+      }
+
+      if (this.isHidden(input)) return false;
+      if (input.disabled || input.readOnly) return false;
+
+      return true;
     }
 
-    if (this.isHidden(input)) return false;
-    if (input.disabled || input.readOnly) return false;
-
-    return true;
+    return false;
   }
 
   private isHidden(element: HTMLElement): boolean {
@@ -61,19 +67,23 @@ export class FormFieldDetector {
   }
 
   private createFormField(element: HTMLElement): FormField {
-    const input = element as HTMLInputElement | HTMLTextAreaElement;
+    const input = element as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
+    const type = input instanceof HTMLSelectElement ? 'select' : input.type || 'text';
+    const placeholder = 'placeholder' in input ? input.placeholder || undefined : undefined;
 
     return {
       element: input,
-      type: input.type || 'text',
+      type,
       name: input.name || input.id || '',
       label: this.findLabel(input),
-      placeholder: input.placeholder || undefined,
+      placeholder,
       autocompleteType: this.getAutocompleteType(input),
     };
   }
 
-  private findLabel(input: HTMLInputElement | HTMLTextAreaElement): string | undefined {
+  private findLabel(
+    input: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+  ): string | undefined {
     const ariaLabel = input.getAttribute('aria-label');
     if (ariaLabel) return ariaLabel;
 
@@ -85,15 +95,22 @@ export class FormFieldDetector {
     const parentLabel = input.closest('label');
     if (parentLabel) {
       const text = parentLabel.textContent?.trim();
-      if (text && text !== input.placeholder && text !== input.value) return text;
+      const placeholder = 'placeholder' in input ? input.placeholder : '';
+      if (text && text !== placeholder && text !== input.value) return text;
     }
 
     return undefined;
   }
 
-  private getAutocompleteType(input: HTMLInputElement | HTMLTextAreaElement): string | undefined {
+  private getAutocompleteType(
+    input: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+  ): string | undefined {
     const autocomplete = input.getAttribute('autocomplete');
     if (autocomplete && autocomplete !== 'off') return autocomplete;
+
+    if (input instanceof HTMLSelectElement) {
+      return undefined;
+    }
 
     const name = input.name?.toLowerCase() || '';
     const type = input.type?.toLowerCase() || '';
