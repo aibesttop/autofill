@@ -7,6 +7,7 @@ import { setupMessageListener } from './messaging';
 import { getPageHookBridge } from './page-hook-bridge';
 import { getTwitterDetector } from './twitter';
 import { FormFieldDetector } from './form-detector';
+import { getFloatingButtonManager } from './floating-button';
 
 const TAG = '[autofill Content]';
 const INSTANCE_KEY = '__contentScriptInstance__';
@@ -51,6 +52,8 @@ async function initialize(): Promise<void> {
   }
 
   const formDetector = new FormFieldDetector();
+  const floatingButton = getFloatingButtonManager();
+  floatingButton.start(state);
 
   if (storage.isAutoDetectEnabled()) {
     const fields = formDetector.detect();
@@ -59,6 +62,7 @@ async function initialize(): Promise<void> {
 
   storage.subscribe((newState) => {
     console.log(TAG, 'State changed:', newState);
+    floatingButton.syncWithState(newState);
     if (newState.autoDetect && newState.enabled) {
       const fields = formDetector.detect();
       console.log(TAG, `Detected ${fields.length} form fields`);

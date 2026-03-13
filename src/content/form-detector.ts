@@ -29,6 +29,33 @@ export class FormFieldDetector {
     return Array.from(this.detectedFields.values());
   }
 
+  detectFieldForElement(element: Element | null): FormField | null {
+    const candidate = this.findCandidateElement(element);
+
+    if (!candidate || !this.isValidFormField(candidate)) {
+      return null;
+    }
+
+    return this.createFormField(candidate);
+  }
+
+  private findCandidateElement(element: Element | null): HTMLElement | null {
+    if (!element) {
+      return null;
+    }
+
+    if (
+      element instanceof HTMLInputElement ||
+      element instanceof HTMLTextAreaElement ||
+      element instanceof HTMLSelectElement
+    ) {
+      return element;
+    }
+
+    const closest = element.closest('input, textarea, select');
+    return closest instanceof HTMLElement ? closest : null;
+  }
+
   private isValidFormField(element: HTMLElement): boolean {
     if (element instanceof HTMLSelectElement) {
       if (this.isHidden(element)) return false;

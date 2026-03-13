@@ -87,7 +87,6 @@ export class ContentMessageHandler {
   }
 
   private handleSidepanelToggle() {
-    chrome.runtime.sendMessage({ type: 'x:open-panel' });
     return { success: true };
   }
 
