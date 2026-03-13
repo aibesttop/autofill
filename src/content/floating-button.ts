@@ -3,6 +3,7 @@ import {
   FORM_DETECTION_DEBOUNCE,
   MUTATION_OBSERVER_CONFIG,
 } from './constants';
+import { autofillFormFromSelectedWebsite } from './form-autofill';
 import { FormFieldDetector } from './form-detector';
 import type { FormField, PluginState } from './types';
 
@@ -26,6 +27,7 @@ export class FloatingButtonManager {
   private observer: MutationObserver | null = null;
   private formDetector = new FormFieldDetector();
   private detectTimer: ReturnType<typeof setTimeout> | null = null;
+  private statusTimer: ReturnType<typeof setTimeout> | null = null;
   private cleanupFocusListeners: (() => void) | null = null;
   private cleanupViewportListeners: (() => void) | null = null;
 
@@ -61,6 +63,11 @@ export class FloatingButtonManager {
     if (this.detectTimer) {
       clearTimeout(this.detectTimer);
       this.detectTimer = null;
+    }
+
+    if (this.statusTimer) {
+      clearTimeout(this.statusTimer);
+      this.statusTimer = null;
     }
 
     this.cleanupFocusListeners?.();
@@ -128,7 +135,7 @@ export class FloatingButtonManager {
     button.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
-      void chrome.runtime.sendMessage({ type: 'x:open-panel' });
+      void this.handleButtonClick();
     });
 
     document.body.appendChild(button);
@@ -182,6 +189,86 @@ export class FloatingButtonManager {
 
   private shouldRenderButton(): boolean {
     return this.state.enabled && this.state.floatingButton;
+  }
+
+  private async handleButtonClick(): Promise<void> {
+    if (!this.targetField) {
+      this.setButtonStatus('Focus field', 'info');
+      return;
+    }
+
+    if (!this.button) {
+      return;
+    }
+
+    this.button.disabled = true;
+    this.setButtonStatus('Filling...', 'info', false);
+
+    try {
+      const result = await autofillFormFromSelectedWebsite(this.targetField.element);
+
+      switch (result.status) {
+        case 'filled':
+          this.setButtonStatus(`${result.filledCount} filled`, 'success');
+          this.scheduleDetect();
+          break;
+        case 'missing_profile':
+          this.setButtonStatus('Select site', 'error');
+          void chrome.runtime.sendMessage({ type: 'x:open-panel' });
+          break;
+        case 'no_target':
+          this.setButtonStatus('Focus field', 'error');
+          break;
+        case 'no_matches':
+          this.setButtonStatus('No match', 'error');
+          break;
+      }
+    } catch {
+      this.setButtonStatus('Try again', 'error');
+    } finally {
+      this.button.disabled = false;
+    }
+  }
+
+  private setButtonStatus(
+    label: string,
+    tone: 'info' | 'success' | 'error',
+    resetAfterDelay = true
+  ): void {
+    if (!this.button) {
+      return;
+    }
+
+    if (this.statusTimer) {
+      clearTimeout(this.statusTimer);
+      this.statusTimer = null;
+    }
+
+    this.button.textContent = label;
+
+    if (tone === 'success') {
+      this.button.style.background = 'linear-gradient(135deg, #059669 0%, #0f766e 100%)';
+    } else if (tone === 'error') {
+      this.button.style.background = 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)';
+    } else {
+      this.button.style.background = 'linear-gradient(135deg, #2563eb 0%, #0f766e 100%)';
+    }
+
+    if (resetAfterDelay) {
+      this.statusTimer = setTimeout(() => {
+        this.statusTimer = null;
+        this.resetButtonAppearance();
+      }, 1800);
+    }
+  }
+
+  private resetButtonAppearance(): void {
+    if (!this.button) {
+      return;
+    }
+
+    this.button.textContent = 'Fill';
+    this.button.style.background = 'linear-gradient(135deg, #2563eb 0%, #0f766e 100%)';
   }
 
   private refreshTargetFromActiveElement(): void {

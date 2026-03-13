@@ -41,6 +41,7 @@ export const StatusBadge = styled.span<{ active: boolean }>`
         `}
 `;
 export const StatusText = styled.p`margin: 0; font-size: 13px; line-height: 1.5; color: #4a5568;`;
+export const ProfileText = styled.p`margin: 12px 0 0 0; font-size: 12px; line-height: 1.5; color: #718096;`;
 export const Setting = styled.div<{ disabled?: boolean }>`
   display: flex; align-items: center; justify-content: space-between;
   padding: 12px 0; border-bottom: 1px solid #e2e8f0;
@@ -65,3 +66,4 @@ export const Toggle = styled.input`
 export const Actions = styled.div`display: flex; gap: 12px; margin-top: 24px;`;
 export const LoadingText = styled.p`margin: 0; font-size: 13px; color: #718096;`;
 export const ErrorText = styled.p`margin: 0; font-size: 13px; color: #e53e3e;`;
+export const InfoText = styled.p`margin: 0; font-size: 13px; color: #2d3748;`;

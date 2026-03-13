@@ -1,6 +1,9 @@
+import { useState } from 'react';
 import { Card } from '../shared/Card';
 import { Button } from '../shared/Button';
 import { useExtensionSettings } from '../../hooks/useExtensionSettings';
+import { useActiveTab } from '../../hooks/useActiveTab';
+import { useAutomationWorkspace } from '../../hooks/useAutomationWorkspace';
 import * as S from './QuickFill.styles';
 
 export const QuickFill: React.FC = () => {
@@ -13,6 +16,36 @@ export const QuickFill: React.FC = () => {
     toggleAutoDetect,
     toggleFloatingButton,
   } = useExtensionSettings();
+  const { tab } = useActiveTab();
+  const { selectedWebsiteSnapshot } = useAutomationWorkspace();
+  const [isFilling, setIsFilling] = useState(false);
+  const [fillFeedback, setFillFeedback] = useState<string | null>(null);
+
+  const handleFillCurrentForm = async () => {
+    if (!tab?.id) {
+      setFillFeedback('No active tab available.');
+      return;
+    }
+
+    setIsFilling(true);
+    setFillFeedback(null);
+
+    try {
+      const response = await chrome.tabs.sendMessage(tab.id, { type: 'form:fill' });
+
+      if (!response?.success || !response.result) {
+        throw new Error(response?.error || 'No autofill result returned');
+      }
+
+      setFillFeedback(response.result.message);
+    } catch (nextError) {
+      setFillFeedback(
+        nextError instanceof Error ? nextError.message : 'Failed to autofill the current page'
+      );
+    } finally {
+      setIsFilling(false);
+    }
+  };
 
   return (
     <S.Container>
@@ -33,6 +66,11 @@ export const QuickFill: React.FC = () => {
                 : 'The extension is paused across supported tabs until you turn it back on.'}
             </S.StatusText>
           </S.StatusRow>
+          <S.ProfileText>
+            {selectedWebsiteSnapshot
+              ? `Selected profile: ${selectedWebsiteSnapshot.name}`
+              : 'No website profile selected yet. Choose one in Batch Submit or Websites before autofill.'}
+          </S.ProfileText>
         </S.Section>
         <S.Section>
           <S.SectionTitle>How it works</S.SectionTitle>
@@ -96,7 +134,16 @@ export const QuickFill: React.FC = () => {
         </S.Section>
         {isLoading ? <S.LoadingText>Loading current extension preferences...</S.LoadingText> : null}
         {error ? <S.ErrorText>{error}</S.ErrorText> : null}
+        {fillFeedback ? <S.InfoText>{fillFeedback}</S.InfoText> : null}
         <S.Actions>
+          <Button
+            fullWidth
+            onClick={handleFillCurrentForm}
+            isLoading={isFilling}
+            disabled={!settings.enabled || isLoading}
+          >
+            Fill Current Form
+          </Button>
           <Button fullWidth variant="secondary" onClick={() => void refresh()} disabled={isLoading}>
             Refresh State
           </Button>

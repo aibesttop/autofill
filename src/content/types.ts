@@ -9,7 +9,8 @@ export type ContentMessageType =
   | 'sidepanel:toggle'
   | 'contextmenu:open-panel'
   | 'floatingButton:toggle'
-  | 'form:detect';
+  | 'form:detect'
+  | 'form:fill';
 
 export interface PluginState {
   enabled: boolean;
@@ -43,6 +44,16 @@ export interface FormDetectionResult {
   submitButtonCount: number;
   fieldTypes: Record<string, number>;
   fields: DetectedFormField[];
+}
+
+export interface AutofillResult {
+  status: 'filled' | 'missing_profile' | 'no_target' | 'no_matches';
+  profileName?: string;
+  profileUrl?: string;
+  filledCount: number;
+  skippedCount: number;
+  message: string;
+  filledFields: string[];
 }
 
 export interface AIButtonConfig {
