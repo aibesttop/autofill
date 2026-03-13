@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { QuickFill } from '../features/QuickFill';
 import { QuickDiscover } from '../features/QuickDiscover';
-import { BatchSubmit, TaskManager, WebsiteManager, Settings } from '../features';
+import { BatchSubmit, TaskManager, WebsiteManager, Settings, AgentPanel } from '../features';
 import * as S from './Dashboard.styles';
 
-type Tab = 'quick-fill' | 'quick-discover' | 'batch-submit' | 'tasks' | 'websites' | 'settings';
+type Tab = 'quick-fill' | 'quick-discover' | 'batch-submit' | 'tasks' | 'websites' | 'ai-agent' | 'settings';
 
 export const Dashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('quick-fill');
@@ -15,6 +15,7 @@ export const Dashboard: React.FC = () => {
     { id: 'batch-submit', label: 'Batch Submit', icon: '📋' },
     { id: 'tasks', label: 'Tasks', icon: '📝' },
     { id: 'websites', label: 'Websites', icon: '🌐' },
+    { id: 'ai-agent', label: 'AI Agent', icon: '🤖' },
     { id: 'settings', label: 'Settings', icon: '⚙️' },
   ];
 
@@ -25,6 +26,7 @@ export const Dashboard: React.FC = () => {
       case 'batch-submit': return <BatchSubmit />;
       case 'tasks': return <TaskManager />;
       case 'websites': return <WebsiteManager />;
+      case 'ai-agent': return <AgentPanel />;
       case 'settings': return <Settings />;
       default: return <QuickFill />;
     }

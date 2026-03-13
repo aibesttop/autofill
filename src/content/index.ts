@@ -8,6 +8,7 @@ import { getPageHookBridge } from './page-hook-bridge';
 import { getTwitterDetector } from './twitter';
 import { FormFieldDetector } from './form-detector';
 import { getFloatingButtonManager } from './floating-button';
+import { initPageController } from '../agent/RemotePageController.content';
 
 const TAG = '[autofill Content]';
 const INSTANCE_KEY = '__contentScriptInstance__';
@@ -74,6 +75,9 @@ async function initialize(): Promise<void> {
       console.log(TAG, 'Network captured:', message.url);
     }
   });
+
+  // Initialize Agent PageController for AI-driven page automation
+  initPageController();
 
   console.log(TAG, 'Content script initialized');
 }
