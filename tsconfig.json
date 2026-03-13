@@ -1,0 +1,51 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "jsxImportSource": "@emotion/react",
+    
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitReturns": true,
+    "forceConsistentCasingInFileNames": true,
+    
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
+    
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@components/*": ["./src/ui/components/*"],
+      "@hooks/*": ["./src/ui/hooks/*"],
+      "@services/*": ["./src/ui/services/*"],
+      "@shared/*": ["./src/shared/*"],
+      "@background/*": ["./src/background/*"],
+      "@content/*": ["./src/content/*"],
+      "@pageController/*": ["./src/page-controller/*"],
+      "@pageHook/*": ["./src/page-hook/*"]
+    },
+    
+    "types": [
+      "vite/client",
+      "chrome",
+      "@emotion/react/types/css-prop"
+    ]
+  },
+  "include": [
+    "src/**/*",
+    "tools/**/*",
+    "vite.config.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "build"
+  ]
+}

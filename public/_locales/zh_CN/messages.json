@@ -1,0 +1,11 @@
+{
+   "contextMenuFill": {
+      "message": "autofill 填充"
+   },
+   "extensionDescription": {
+      "message": "使用 autofill 提升 SEO。AI 助手帮您半自动提交产品至 100+ 高质量目录和博客，根据目标网站生成定制化文案。快速、安全、高效。"
+   },
+   "extensionName": {
+      "message": "autofill Seo Agent | AI 驱动的半自动外链提交与目录站助手"
+   }
+}

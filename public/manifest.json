@@ -1,0 +1,56 @@
+{
+  "manifest_version": 3,
+  "name": "__MSG_extensionName__",
+  "description": "__MSG_extensionDescription__",
+  "version": "2.1.0",
+  "default_locale": "en",
+  
+  "action": {
+    "default_popup": "popup.html"
+  },
+  
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  
+  "content_scripts": [{
+    "matches": ["<all_urls>"],
+    "js": ["content.js"],
+    "run_at": "document_end"
+  }],
+  
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  
+  "options_page": "options.html",
+  
+  "permissions": [
+    "storage",
+    "sidePanel",
+    "scripting",
+    "tabs",
+    "contextMenus"
+  ],
+  
+  "host_permissions": [
+    "https://autofill.app/*",
+    "https://twitter.com/*",
+    "*://x.com/*",
+    "*://mobile.x.com/*",
+    "https://twibird.com/*"
+  ],
+  
+  "web_accessible_resources": [{
+    "matches": ["<all_urls>"],
+    "resources": ["page-hook.js"]
+  }],
+  
+  "icons": {
+    "16": "icons/16.png",
+    "32": "icons/32.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  }
+}
