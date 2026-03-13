@@ -5,18 +5,16 @@
 import { STORAGE_KEYS, DEFAULTS } from './constants';
 import type { PluginState } from './types';
 
-/**
- * Storage manager class
- */
 export class StorageManager {
-  private state: PluginState = { ...DEFAULTS };
+  private state: PluginState = {
+    enabled: DEFAULTS.PLUGIN_ENABLED,
+    autoDetect: DEFAULTS.AUTO_DETECT,
+    floatingButton: DEFAULTS.FLOATING_BUTTON,
+    contextMenu: DEFAULTS.CONTEXT_MENU,
+  };
   private listeners: Set<(state: PluginState) => void> = new Set();
 
-  /**
-   * Initialize storage manager
-   */
   async initialize(): Promise<void> {
-    // Load initial state from storage
     const result = await chrome.storage.local.get(Object.values(STORAGE_KEYS));
 
     this.state = {
@@ -26,7 +24,6 @@ export class StorageManager {
       contextMenu: result[STORAGE_KEYS.CONTEXT_MENU] ?? DEFAULTS.CONTEXT_MENU,
     };
 
-    // Listen for storage changes
     chrome.storage.onChanged.addListener((changes, areaName) => {
       if (areaName === 'local') {
         this.handleStorageChanges(changes);
@@ -36,9 +33,6 @@ export class StorageManager {
     console.log('[Content Storage] Initialized with state:', this.state);
   }
 
-  /**
-   * Handle storage changes
-   */
   private handleStorageChanges(changes: { [key: string]: chrome.storage.StorageChange }): void {
     let changed = false;
 
@@ -69,60 +63,43 @@ export class StorageManager {
     }
   }
 
-  /**
-   * Get current state
-   */
   getState(): PluginState {
     return { ...this.state };
   }
 
-  /**
-   * Check if plugin is enabled
-   */
   isEnabled(): boolean {
     return this.state.enabled;
   }
 
-  /**
-   * Check if auto-detect is enabled
-   */
   isAutoDetectEnabled(): boolean {
     return this.state.autoDetect && this.state.enabled;
   }
 
-  /**
-   * Check if floating button should be shown
-   */
   showFloatingButton(): boolean {
     return this.state.floatingButton && this.state.enabled;
   }
 
-  /**
-   * Update state value
-   */
   async update<K extends keyof PluginState>(key: K, value: PluginState[K]): Promise<void> {
-    const storageKey = STORAGE_KEYS[key.toUpperCase() as keyof typeof STORAGE_KEYS];
+    const keyMap: Record<string, string> = {
+      enabled: STORAGE_KEYS.PLUGIN_ENABLED,
+      autoDetect: STORAGE_KEYS.AUTO_DETECT,
+      floatingButton: STORAGE_KEYS.FLOATING_BUTTON,
+      contextMenu: STORAGE_KEYS.CONTEXT_MENU,
+    };
 
-    await chrome.storage.local.set({
-      [storageKey]: value,
-    });
+    const storageKey = keyMap[key];
+    if (storageKey) {
+      await chrome.storage.local.set({ [storageKey]: value });
+    }
   }
 
-  /**
-   * Subscribe to state changes
-   */
   subscribe(listener: (state: PluginState) => void): () => void {
     this.listeners.add(listener);
-
-    // Return unsubscribe function
     return () => {
       this.listeners.delete(listener);
     };
   }
 
-  /**
-   * Notify all listeners of state change
-   */
   private notifyListeners(): void {
     const state = this.getState();
     this.listeners.forEach((listener) => {
@@ -135,12 +112,8 @@ export class StorageManager {
   }
 }
 
-// Singleton instance
 let storageInstance: StorageManager | null = null;
 
-/**
- * Get storage manager singleton
- */
 export function getStorageManager(): StorageManager {
   if (!storageInstance) {
     storageInstance = new StorageManager();

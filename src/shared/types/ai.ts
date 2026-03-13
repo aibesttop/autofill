@@ -1,6 +1,6 @@
 // AI-related type definitions
 
-interface AIAgentConfig {
+export interface AIAgentConfig {
   instructions: {
     system: string;
     page?: string;
@@ -10,7 +10,7 @@ interface AIAgentConfig {
   timeout?: number;
 }
 
-interface AIAgentActivity {
+export interface AIAgentActivity {
   type: 'step' | 'error' | 'complete';
   timestamp: number;
   data: {
@@ -21,7 +21,7 @@ interface AIAgentActivity {
   };
 }
 
-interface AIBrowserSnapshot {
+export interface AIBrowserSnapshot {
   elements: Array<{
     ref: string;
     description: string;
@@ -33,7 +33,7 @@ interface AIBrowserSnapshot {
   timestamp: number;
 }
 
-interface AITask {
+export interface AITask {
   id: string;
   taskText: string;
   config: AIAgentConfig;
@@ -43,10 +43,3 @@ interface AITask {
   createdAt: number;
   completedAt?: number;
 }
-
-export type {
-  AIAgentConfig,
-  AIAgentActivity,
-  AIBrowserSnapshot,
-  AITask,
-};

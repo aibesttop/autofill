@@ -1,6 +1,5 @@
 /**
  * Authentication Hook
- * Manages authentication state and operations
  */
 
 import { useState, useEffect } from 'react';
@@ -17,7 +16,6 @@ export function useAuth() {
     error: null,
   });
 
-  // Load token from chrome storage on mount
   useEffect(() => {
     loadAuthState();
   }, []);
@@ -31,16 +29,14 @@ export function useAuth() {
         setAuthState({
           isAuthenticated: true,
           token: token.access_token,
-          user: {
-            id: token.client_id,
-          },
+          user: { id: token.client_id },
           isLoading: false,
           error: null,
         });
       } else {
         setAuthState((prev) => ({ ...prev, isLoading: false }));
       }
-    } catch (error) {
+    } catch {
       setAuthState({
         isAuthenticated: false,
         token: null,
@@ -55,23 +51,18 @@ export function useAuth() {
     setAuthState((prev) => ({ ...prev, isLoading: true, error: null }));
 
     try {
-      // Send message to background to start OAuth flow
       await chrome.runtime.sendMessage({ type: 'auth.start' });
 
-      // Wait for auth success message
       return new Promise<void>((resolve, reject) => {
         const listener = (message: any) => {
           if (message.type === 'auth.success') {
             chrome.runtime.onMessage.removeListener(listener);
-            loadAuthState().then(() => {
-              resolve();
-            });
+            loadAuthState().then(() => resolve());
           }
         };
 
         chrome.runtime.onMessage.addListener(listener);
 
-        // Timeout after 2 minutes
         setTimeout(() => {
           chrome.runtime.onMessage.removeListener(listener);
           reject(new Error('Login timeout'));
@@ -92,7 +83,6 @@ export function useAuth() {
   const logout = async () => {
     try {
       await chrome.storage.local.remove(TOKEN_KEY);
-
       setAuthState({
         isAuthenticated: false,
         token: null,

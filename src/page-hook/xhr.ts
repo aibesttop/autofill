@@ -1,36 +1,31 @@
 /**
- * XMLHttpRequest (XHR) hook for intercepting network requests
- * Captures Twitter/X specific endpoints
+ * XMLHttpRequest hook for intercepting network requests
  */
 
 import { shouldCaptureUrl, normalizeUrl } from './url-utils';
 import { captureResponse, log } from './messenger';
 
-/**
- * Read response body from XHR object
- * Handles different response types
- */
+interface XHRWithUrl extends XMLHttpRequest {
+  __xUrl?: string;
+}
+
 function readResponseBody(xhr: XMLHttpRequest): string {
   try {
     const responseType = xhr.responseType;
 
-    // Text response
     if (responseType === '' || responseType === 'text' || responseType == null) {
       return xhr.responseText || '';
     }
 
-    // ArrayBuffer response
     if (responseType === 'arraybuffer' && xhr.response instanceof ArrayBuffer) {
       try {
         const decoder = new TextDecoder('utf-8');
-        const bytes = new Uint8Array(xhr.response);
-        return decoder.decode(bytes);
+        return decoder.decode(new Uint8Array(xhr.response));
       } catch {
         return '';
       }
     }
 
-    // JSON response
     if (responseType === 'json' && xhr.response) {
       try {
         return typeof xhr.response === 'string' ? xhr.response : JSON.stringify(xhr.response);
@@ -45,68 +40,57 @@ function readResponseBody(xhr: XMLHttpRequest): string {
   return '';
 }
 
-/**
- * Hook XMLHttpRequest.prototype.open to capture URLs
- */
 export function hookXHROpen(): void {
   const originalOpen = XMLHttpRequest.prototype.open;
 
   XMLHttpRequest.prototype.open = function (
-    this: XMLHttpRequest & { __xUrl?: string },
-    ...args: Parameters<typeof XMLHttpRequest.prototype.open>
+    this: XHRWithUrl,
+    method: string,
+    url: string | URL,
+    async?: boolean,
+    username?: string | null,
+    password?: string | null
   ) {
     try {
-      // Capture URL from first argument (method) and second argument (URL)
-      // @ts-ignore - storing custom property
-      this.__xUrl = args[1];
-    } catch (error) {
+      this.__xUrl = typeof url === 'string' ? url : url.toString();
+    } catch {
       log('warn', 'Failed to capture XHR URL in open()');
     }
 
-    return originalOpen.apply(this, args);
+    return originalOpen.call(this, method, url, async ?? true, username, password);
   };
 }
 
-/**
- * Hook XMLHttpRequest.prototype.send to capture responses
- */
 export function hookXHRSend(): void {
   const originalSend = XMLHttpRequest.prototype.send;
 
   XMLHttpRequest.prototype.send = function (
-    this: XMLHttpRequest & { __xUrl?: string },
-    ...args: Parameters<typeof XMLHttpRequest.prototype.send>
+    this: XHRWithUrl,
+    body?: Document | XMLHttpRequestBodyInit | null
   ) {
     try {
-      // Add listener for response
-      this.addEventListener('loadend', function (this: XMLHttpRequest) {
+      this.addEventListener('loadend', function (this: XHRWithUrl) {
         try {
           const url = this.__xUrl || this.responseURL;
+          if (!shouldCaptureUrl(url)) return;
 
-          if (!shouldCaptureUrl(url)) {
-            return;
-          }
-
-          const body = readResponseBody(this);
+          const responseBody = readResponseBody(this);
           const normalizedUrl = normalizeUrl(url);
 
-          captureResponse(normalizedUrl, this.status, body);
+          captureResponse(normalizedUrl, this.status, responseBody);
         } catch (error) {
           const url = this.__xUrl || this.responseURL;
           log('error', String(error), normalizeUrl(url));
         }
       });
-    } catch (error) {
+    } catch {
       log('warn', 'Failed to add XHR event listener');
     }
 
-    return originalSend.apply(this, args);
+    return originalSend.call(this, body);
   };
 }
 
-/**
- * Install XHR hooks
- */
 export function installXHRHooks(): void {
   try {
     hookXHROpen();

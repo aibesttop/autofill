@@ -2,9 +2,7 @@
  * Tab management module
  */
 
-import { TabControlMessage } from '@shared/types';
-
-const PAGE_CONTROLLER_SCRIPT = 'content-scripts/page-controller.js';
+const PAGE_CONTROLLER_SCRIPT = 'page-controller.js';
 const TAG = '[autofillAgent][TabsController.background]';
 
 // Track tabs that have page controller injected
@@ -43,12 +41,13 @@ export async function injectPageController(tabId: number): Promise<void> {
 
 /**
  * Handle TAB_CONTROL messages
+ * Returns true if response will be sent asynchronously
  */
-export async function handleTabControl(
-  message: TabControlMessage,
-  sender: chrome.runtime.MessageSender,
+export function handleTabControl(
+  message: any,
+  _sender: chrome.runtime.MessageSender,
   sendResponse: (response?: any) => void
-): Promise<boolean> {
+): boolean {
   const { action, payload } = message;
 
   switch (action) {
@@ -82,10 +81,10 @@ function getActiveTab(sendResponse: (response?: any) => void): boolean {
     .catch((error) => {
       sendResponse({ success: false, error: error.message });
     });
-  return true; // Async response
+  return true;
 }
 
-function getTabInfo(tabId: number, sendResponse: (response?: any) => void): boolean {
+function getTabInfo(tabId: number | undefined, sendResponse: (response?: any) => void): boolean {
   if (!tabId) {
     sendResponse({ success: false, error: 'Missing tabId' });
     return false;
@@ -99,10 +98,10 @@ function getTabInfo(tabId: number, sendResponse: (response?: any) => void): bool
     .catch((error) => {
       sendResponse({ success: false, error: error.message });
     });
-  return true; // Async response
+  return true;
 }
 
-function openNewTab(url: string, sendResponse: (response?: any) => void): boolean {
+function openNewTab(url: string | undefined, sendResponse: (response?: any) => void): boolean {
   if (!url) {
     sendResponse({ success: false, error: 'Missing url' });
     return false;
@@ -120,11 +119,11 @@ function openNewTab(url: string, sendResponse: (response?: any) => void): boolea
     .catch((error) => {
       sendResponse({ success: false, error: error.message });
     });
-  return true; // Async response
+  return true;
 }
 
 function createTabGroup(
-  payload: { tabIds?: number[]; windowId?: number },
+  payload: { tabIds?: number[]; windowId?: number } | undefined,
   sendResponse: (response?: any) => void
 ): boolean {
   if (!payload?.tabIds) {
@@ -143,11 +142,11 @@ function createTabGroup(
     .catch((error) => {
       sendResponse({ success: false, error: error.message });
     });
-  return true; // Async response
+  return true;
 }
 
 function updateTabGroup(
-  payload: { groupId?: number; properties?: chrome.tabGroups.UpdateProperties },
+  payload: { groupId?: number; properties?: chrome.tabGroups.UpdateProperties } | undefined,
   sendResponse: (response?: any) => void
 ): boolean {
   if (!payload?.groupId) {
@@ -163,11 +162,11 @@ function updateTabGroup(
     .catch((error) => {
       sendResponse({ success: false, error: error.message });
     });
-  return true; // Async response
+  return true;
 }
 
 function addTabToGroup(
-  payload: { tabId?: number; groupId?: number },
+  payload: { tabId?: number; groupId?: number } | undefined,
   sendResponse: (response?: any) => void
 ): boolean {
   if (!payload?.tabId || !payload?.groupId) {
@@ -183,10 +182,10 @@ function addTabToGroup(
     .catch((error) => {
       sendResponse({ success: false, error: error.message });
     });
-  return true; // Async response
+  return true;
 }
 
-function closeTab(tabId: number, sendResponse: (response?: any) => void): boolean {
+function closeTab(tabId: number | undefined, sendResponse: (response?: any) => void): boolean {
   if (!tabId) {
     sendResponse({ success: false, error: 'Missing tabId' });
     return false;
@@ -200,7 +199,7 @@ function closeTab(tabId: number, sendResponse: (response?: any) => void): boolea
     .catch((error) => {
       sendResponse({ success: false, error: error.message });
     });
-  return true; // Async response
+  return true;
 }
 
 /**

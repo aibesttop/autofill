@@ -2,6 +2,8 @@
  * Common utility functions for page automation
  */
 
+import type { InteractiveElement } from '../types';
+
 /**
  * Wait for specified amount of time (in seconds)
  */
@@ -13,10 +15,10 @@ export async function waitFor(seconds: number): Promise<void> {
  * Scroll element into view if needed
  */
 export async function scrollIntoViewIfNeeded(element: HTMLElement): Promise<void> {
-  if (!element.scrollIntoViewIfNeeded) {
-    element.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'nearest' });
+  if (typeof (element as any).scrollIntoViewIfNeeded === 'function') {
+    (element as any).scrollIntoViewIfNeeded();
   } else {
-    element.scrollIntoViewIfNeeded();
+    element.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'nearest' });
   }
 }
 
@@ -79,19 +81,16 @@ export function throttle<T extends (...args: any[]) => any>(
   limit: number
 ): (...args: Parameters<T>) => void {
   let inThrottle: boolean;
-  let lastResult: ReturnType<T>;
 
   return function (this: any, ...args: Parameters<T>) {
     if (!inThrottle) {
       inThrottle = true;
-      lastResult = func.apply(this, args);
+      func.apply(this, args);
 
       setTimeout(() => {
         inThrottle = false;
       }, limit);
     }
-
-    return lastResult;
   };
 }
 

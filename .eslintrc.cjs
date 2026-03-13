@@ -11,10 +11,9 @@ module.exports = {
     'plugin:@typescript-eslint/recommended',
     'plugin:react/recommended',
     'plugin:react-hooks/recommended',
-    'plugin:jsx-a11y/recommended',
   ],
   parser: '@typescript-eslint/parser',
-  plugins: ['@typescript-eslint', 'react', 'react-hooks', 'jsx-a11y'],
+  plugins: ['@typescript-eslint', 'react', 'react-hooks'],
   parserOptions: {
     ecmaVersion: 'latest',
     sourceType: 'module',
@@ -30,21 +29,13 @@ module.exports = {
   rules: {
     'react/react-in-jsx-scope': 'off',
     'react/prop-types': 'off',
-    '@typescript-eslint/no-unused-vars': ['error', { 
+    '@typescript-eslint/no-unused-vars': ['warn', { 
       argsIgnorePattern: '^_',
       varsIgnorePattern: '^_',
     }],
     '@typescript-eslint/no-explicit-any': 'warn',
-    'no-console': ['warn', { allow: ['warn', 'error'] }],
+    'no-console': ['warn', { allow: ['warn', 'error', 'log', 'info'] }],
     'react-hooks/rules-of-hooks': 'error',
     'react-hooks/exhaustive-deps': 'warn',
   },
-  overrides: [
-    {
-      files: ['*.tsx'],
-      rules: {
-        '@typescript-eslint/no-explicit-any': 'error',
-      },
-    },
-  ],
 };

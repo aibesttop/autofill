@@ -1,8 +1,3 @@
-/**
- * Card Component
- * Container component with consistent styling
- */
-
 import * as S from './Card.styles';
 
 export interface CardProps {

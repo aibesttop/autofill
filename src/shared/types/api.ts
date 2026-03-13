@@ -1,19 +1,20 @@
 // API response type definitions
 
-interface AuthToken {
+export interface AuthToken {
   access_token: string;
-  token_type: 'Bearer';
+  token_type: string;
+  client_id?: string;
   expires_in?: number;
   refresh_token?: string;
 }
 
-interface ClientInfo {
+export interface ClientInfo {
   client_id: string;
   access_token: string;
   token_type: string;
 }
 
-interface Website {
+export interface Website {
   id: string;
   name: string;
   url: string;
@@ -24,20 +25,20 @@ interface Website {
   updated_at: string;
 }
 
-interface APIResponse<T = any> {
+export interface APIResponse<T = any> {
   code: number;
   message?: string;
   data: T;
 }
 
-interface PaginatedResponse<T> {
+export interface PaginatedResponse<T> {
   list: T[];
   total: number;
   page: number;
   pageSize: number;
 }
 
-interface SubmitTask {
+export interface SubmitTask {
   id: string;
   websiteId: string;
   url: string;
@@ -48,19 +49,9 @@ interface SubmitTask {
   updatedAt: string;
 }
 
-interface AITaskConfig {
+export interface AITaskConfig {
   provider: 'autofill' | 'openai' | 'anthropic' | 'custom';
   model: string;
   apiKey?: string;
   baseURL?: string;
 }
-
-export type {
-  AuthToken,
-  ClientInfo,
-  Website,
-  APIResponse,
-  PaginatedResponse,
-  SubmitTask,
-  AITaskConfig,
-};

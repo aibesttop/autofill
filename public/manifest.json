@@ -44,7 +44,7 @@
   
   "web_accessible_resources": [{
     "matches": ["<all_urls>"],
-    "resources": ["page-hook.js"]
+    "resources": ["page-hook.js", "page-controller.js"]
   }],
   
   "icons": {

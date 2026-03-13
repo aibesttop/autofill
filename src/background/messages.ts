@@ -2,20 +2,16 @@
  * Message router for background service worker
  */
 
-import { injectPageController } from './tabs';
-import { handleTabControl } from './tabs';
+import { injectPageController, handleTabControl } from './tabs';
 import { startAuthFlow } from './auth';
 import { fetchWebsites, fetchImageAsDataUrl } from './api';
 import { setupContextMenu, removeContextMenu } from './context-menu';
-import { STORAGE_KEYS } from '@shared/constants';
-import type { ExtensionMessage } from '@shared/types';
 
 // Track tabs with open side panels
 const openSidePanelTabs = new Set<number>();
 
 /**
  * Handle PAGE_CONTROL messages
- * Injects page controller and forwards message to content script
  */
 function handlePageControl(
   message: any,
@@ -38,8 +34,8 @@ function handlePageControl(
   // Inject page controller and send message
   injectPageController(targetTabId)
     .then(() => chrome.tabs.sendMessage(targetTabId, { type: 'PAGE_CONTROL', action, payload }))
-    .then((response) => sendResponse(response))
-    .catch((error) => {
+    .then((response: any) => sendResponse(response))
+    .catch((error: Error) => {
       sendResponse({ success: false, error: error.message });
     });
 
@@ -75,10 +71,11 @@ function handleOpenSidePanel(
           await chrome.sidePanel.open({ tabId });
           openSidePanelTabs.add(tabId);
 
-          // Notify content script
           try {
             chrome.tabs.sendMessage(tabId, { type: 'sidepanel:toggle', open: true });
-          } catch {}
+          } catch {
+            // Ignore
+          }
         } else if (windowId) {
           await chrome.sidePanel.open({ windowId });
         }
@@ -110,7 +107,7 @@ function handleToggleContextMenu(
   chrome.storage.local.get(['pluginEnabled'], (result) => {
     const pluginEnabled = result.pluginEnabled !== false;
 
-    if (pluginEnabled) {
+    if (pluginEnabled && enabled) {
       setupContextMenu();
     } else {
       removeContextMenu();
@@ -148,10 +145,11 @@ function handleTogglePlugin(
         if (tab?.id) {
           try {
             chrome.tabs.sendMessage(tab.id, { type: 'plugin:toggle', enabled }, () => {
-              // Ignore lastError
               void chrome.runtime.lastError;
             });
-          } catch {}
+          } catch {
+            // Ignore
+          }
         }
       });
     });
@@ -181,7 +179,9 @@ function handleToggleAutoDetect(
           chrome.tabs.sendMessage(tab.id, { type: 'autoDetect:toggle', enabled }, () => {
             void chrome.runtime.lastError;
           });
-        } catch {}
+        } catch {
+          // Ignore
+        }
       }
     });
   });
@@ -224,7 +224,7 @@ function handleFetchImage(message: any, sendResponse: (response?: any) => void):
  */
 export function setupMessageRouter(): void {
   chrome.runtime.onMessage.addListener(
-    (message: ExtensionMessage, sender: chrome.runtime.MessageSender, sendResponse) => {
+    (message: any, sender: chrome.runtime.MessageSender, sendResponse) => {
       const type = message?.type;
       if (!type) return false;
 
@@ -239,7 +239,9 @@ export function setupMessageRouter(): void {
           startAuthFlow();
           try {
             sendResponse?.({ ok: true });
-          } catch {}
+          } catch {
+            // Ignore
+          }
           return true;
 
         case 'x:open-panel':

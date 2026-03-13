@@ -1,8 +1,3 @@
-/**
- * Login Screen Component
- * Shows login button when user is not authenticated
- */
-
 import { useAuth } from '../../hooks/useAuth';
 import { Button } from '../shared/Button';
 import * as S from './LoginScreen.styles';
@@ -10,9 +5,7 @@ import * as S from './LoginScreen.styles';
 export const LoginScreen: React.FC = () => {
   const { isAuthenticated, login, isLoading } = useAuth();
 
-  if (isAuthenticated) {
-    return null;
-  }
+  if (isAuthenticated) return null;
 
   const handleLogin = async () => {
     try {
@@ -26,9 +19,7 @@ export const LoginScreen: React.FC = () => {
     <S.Container>
       <S.Logo src="/icons/128.png" alt="autofill Logo" />
       <S.Title>autofill</S.Title>
-      <S.Description>
-        AI-powered SEO directory submission tool
-      </S.Description>
+      <S.Description>AI-powered SEO directory submission tool</S.Description>
       <Button onClick={handleLogin} isLoading={isLoading} fullWidth size="lg">
         Sign In with autofill
       </Button>

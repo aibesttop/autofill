@@ -1,6 +1,5 @@
 /**
  * Message handler for page-controller
- * Receives commands from background script
  */
 
 import type { PageControlMessage } from './types';
@@ -16,9 +15,6 @@ export class MessageHandler {
     this.domProcessor = new DOMProcessor();
   }
 
-  /**
-   * Handle incoming message
-   */
   async handleMessage(message: PageControlMessage): Promise<any> {
     const { action, payload } = message;
 
@@ -26,28 +22,20 @@ export class MessageHandler {
       switch (action) {
         case 'snapshot':
           return this.handleSnapshot();
-
         case 'click':
           return this.handleClick(payload);
-
         case 'input':
           return this.handleInput(payload);
-
         case 'select':
           return this.handleSelect(payload);
-
         case 'scroll':
           return this.handleScroll(payload);
-
         case 'get_state':
           return this.handleGetState();
-
         case 'get_element_info':
           return this.handleGetElementInfo(payload);
-
         case 'evaluate':
           return this.handleEvaluate(payload);
-
         default:
           throw new Error(`Unknown action: ${action}`);
       }
@@ -59,9 +47,6 @@ export class MessageHandler {
     }
   }
 
-  /**
-   * Handle DOM snapshot request
-   */
   private handleSnapshot() {
     const result = this.domProcessor.getResult();
 
@@ -73,45 +58,33 @@ export class MessageHandler {
     };
   }
 
-  /**
-   * Handle click action
-   */
   private async handleClick(payload: { index: number }) {
     const { index } = payload;
-    const map = this.domProcessor['selectorMap'];
+    const map = this.domProcessor.getSelectorMap();
 
     await clickElement({ index }, map);
 
     return { success: true, message: `Clicked element ${index}` };
   }
 
-  /**
-   * Handle input action
-   */
   private async handleInput(payload: { index: number; text: string; clearFirst?: boolean }) {
     const { index, text, clearFirst } = payload;
-    const map = this.domProcessor['selectorMap'];
+    const map = this.domProcessor.getSelectorMap();
 
     await inputText({ element: { index }, text, clearFirst }, map);
 
     return { success: true, message: `Input text into element ${index}` };
   }
 
-  /**
-   * Handle select action
-   */
   private async handleSelect(payload: { index: number; option: string }) {
     const { index, option } = payload;
-    const map = this.domProcessor['selectorMap'];
+    const map = this.domProcessor.getSelectorMap();
 
     await selectOption({ element: { index }, option }, map);
 
     return { success: true, message: `Selected option in element ${index}` };
   }
 
-  /**
-   * Handle scroll action
-   */
   private async handleScroll(payload: {
     direction: 'up' | 'down' | 'left' | 'right';
     amount?: number;
@@ -124,18 +97,11 @@ export class MessageHandler {
       targetElement = this.domProcessor.getElementByIndex(targetIndex) || undefined;
     }
 
-    const message = await performScroll({
-      direction,
-      amount,
-      targetElement,
-    });
+    const message = await performScroll({ direction, amount, targetElement });
 
     return { success: true, message };
   }
 
-  /**
-   * Handle get state request
-   */
   private handleGetState() {
     return {
       success: true,
@@ -155,9 +121,6 @@ export class MessageHandler {
     };
   }
 
-  /**
-   * Handle get element info request
-   */
   private handleGetElementInfo(payload: { index: number }) {
     const { index } = payload;
     const element = this.domProcessor.getElementByIndex(index);
@@ -190,18 +153,10 @@ export class MessageHandler {
     };
   }
 
-  /**
-   * Handle evaluate JavaScript request
-   */
   private handleEvaluate(payload: { code: string }) {
     try {
-      // eslint-disable-next-line no-eval
-      const result = eval(payload.code);
-
-      return {
-        success: true,
-        result,
-      };
+      const result = new Function(payload.code)();
+      return { success: true, result };
     } catch (error) {
       return {
         success: false,
@@ -211,18 +166,14 @@ export class MessageHandler {
   }
 }
 
-/**
- * Setup message listener
- */
 export function setupMessageListener(): void {
   const handler = new MessageHandler();
 
-  chrome.runtime.onMessage.addListener((message: PageControlMessage, sender, sendResponse) => {
+  chrome.runtime.onMessage.addListener((message: PageControlMessage, _sender, sendResponse) => {
     if (message.type === 'PAGE_CONTROL') {
       handler.handleMessage(message).then(sendResponse);
-      return true; // Async response
+      return true;
     }
-
     return false;
   });
 

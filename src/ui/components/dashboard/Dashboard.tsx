@@ -1,8 +1,3 @@
-/**
- * Dashboard Component
- * Main interface showing tabs for different AI features
- */
-
 import { useState } from 'react';
 import { QuickFill } from '../features/QuickFill';
 import { QuickDiscover } from '../features/QuickDiscover';
@@ -25,20 +20,13 @@ export const Dashboard: React.FC = () => {
 
   const renderContent = () => {
     switch (activeTab) {
-      case 'quick-fill':
-        return <QuickFill />;
-      case 'quick-discover':
-        return <QuickDiscover />;
-      case 'batch-submit':
-        return <BatchSubmit />;
-      case 'tasks':
-        return <TaskManager />;
-      case 'websites':
-        return <WebsiteManager />;
-      case 'settings':
-        return <Settings />;
-      default:
-        return <QuickFill />;
+      case 'quick-fill': return <QuickFill />;
+      case 'quick-discover': return <QuickDiscover />;
+      case 'batch-submit': return <BatchSubmit />;
+      case 'tasks': return <TaskManager />;
+      case 'websites': return <WebsiteManager />;
+      case 'settings': return <Settings />;
+      default: return <QuickFill />;
     }
   };
 
@@ -49,20 +37,14 @@ export const Dashboard: React.FC = () => {
         <S.Title>autofill</S.Title>
         <S.Version>v2.1.0</S.Version>
       </S.Header>
-
       <S.Tabs>
         {tabs.map((tab) => (
-          <S.Tab
-            key={tab.id}
-            active={activeTab === tab.id}
-            onClick={() => setActiveTab(tab.id)}
-          >
+          <S.Tab key={tab.id} active={activeTab === tab.id} onClick={() => setActiveTab(tab.id)}>
             <S.TabIcon>{tab.icon}</S.TabIcon>
             <S.TabLabel>{tab.label}</S.TabLabel>
           </S.Tab>
         ))}
       </S.Tabs>
-
       <S.Content>{renderContent()}</S.Content>
     </S.Container>
   );

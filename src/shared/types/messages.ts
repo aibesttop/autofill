@@ -1,27 +1,28 @@
 // Message type definitions for extension communication
 
 // Base message type
-interface BaseMessage {
+export interface BaseMessage {
   type: string;
   id?: string;
   timestamp?: number;
 }
 
 // Background → Content messages
-interface TabChangeMessage extends BaseMessage {
+export interface TabChangeMessage extends BaseMessage {
   type: 'TAB_CHANGE';
   action: 'created' | 'removed' | 'updated';
   payload: {
     tab?: chrome.tabs.Tab;
     tabId?: number;
     changeInfo?: chrome.tabs.TabChangeInfo;
+    removeInfo?: chrome.tabs.TabRemoveInfo;
   };
 }
 
 // Content → Background messages
-interface TabControlMessage extends BaseMessage {
+export interface TabControlMessage extends BaseMessage {
   type: 'TAB_CONTROL';
-  action: 
+  action:
     | 'get_active_tab'
     | 'get_tab_info'
     | 'open_new_tab'
@@ -35,46 +36,58 @@ interface TabControlMessage extends BaseMessage {
     url?: string;
     groupId?: number;
     windowId?: number;
-    properties?: object;
+    properties?: chrome.tabGroups.UpdateProperties;
   };
 }
 
-interface PageControlMessage extends BaseMessage {
+export interface PageControlMessage extends BaseMessage {
   type: 'PAGE_CONTROL';
   action: string;
   payload?: any;
-  targetTabId: number;
+  targetTabId?: number;
 }
 
-interface AuthStartMessage extends BaseMessage {
+export interface AuthStartMessage extends BaseMessage {
   type: 'auth.start';
 }
 
-interface GetWebsitesMessage extends BaseMessage {
+export interface GetWebsitesMessage extends BaseMessage {
   type: 'getWebsites';
 }
 
-interface FetchImageMessage extends BaseMessage {
+export interface FetchImageMessage extends BaseMessage {
   type: 'fetchImage';
   url: string;
 }
 
+export interface OpenPanelMessage extends BaseMessage {
+  type: 'x:open-panel';
+}
+
+export interface ContextMenuToggleMessage extends BaseMessage {
+  type: 'contextMenu:toggle';
+  enabled?: boolean;
+}
+
+export interface PluginToggleMessage extends BaseMessage {
+  type: 'plugin:toggle';
+  enabled?: boolean;
+}
+
+export interface AutoDetectToggleMessage extends BaseMessage {
+  type: 'autoDetect:toggle';
+  enabled?: boolean;
+}
+
 // Union type for all messages
-type ExtensionMessage = 
+export type ExtensionMessage =
   | TabControlMessage
   | PageControlMessage
   | AuthStartMessage
   | GetWebsitesMessage
   | FetchImageMessage
-  | TabChangeMessage;
-
-export type {
-  BaseMessage,
-  TabChangeMessage,
-  TabControlMessage,
-  PageControlMessage,
-  AuthStartMessage,
-  GetWebsitesMessage,
-  FetchImageMessage,
-  ExtensionMessage,
-};
+  | TabChangeMessage
+  | OpenPanelMessage
+  | ContextMenuToggleMessage
+  | PluginToggleMessage
+  | AutoDetectToggleMessage;

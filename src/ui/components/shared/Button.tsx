@@ -1,9 +1,4 @@
-/**
- * Button Component
- * Reusable button with different variants and sizes
- */
-
-import { ButtonVariant, ButtonSize } from '../../types/ui';
+import type { ButtonVariant, ButtonSize } from '../../types/ui';
 import * as S from './Button.styles';
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -24,13 +19,7 @@ export const Button: React.FC<ButtonProps> = ({
   ...props
 }) => {
   return (
-    <S.Button
-      variant={variant}
-      size={size}
-      disabled={disabled || isLoading}
-      fullWidth={fullWidth}
-      {...props}
-    >
+    <S.Button variant={variant} size={size} disabled={disabled || isLoading} fullWidth={fullWidth} {...props}>
       {isLoading ? <S.LoadingSpinner /> : children}
     </S.Button>
   );

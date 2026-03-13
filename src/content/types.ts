@@ -2,9 +2,6 @@
  * Type definitions for Content Script
  */
 
-/**
- * Content script message types from background
- */
 export type ContentMessageType =
   | 'plugin:toggle'
   | 'autoDetect:toggle'
@@ -13,9 +10,6 @@ export type ContentMessageType =
   | 'contextmenu:open-panel'
   | 'floatingButton:toggle';
 
-/**
- * Plugin state from storage
- */
 export interface PluginState {
   enabled: boolean;
   autoDetect: boolean;
@@ -23,9 +17,6 @@ export interface PluginState {
   contextMenu: boolean;
 }
 
-/**
- * Detected form field
- */
 export interface FormField {
   element: HTMLInputElement | HTMLTextAreaElement | HTMLElement;
   type: string;
@@ -35,18 +26,12 @@ export interface FormField {
   autocompleteType?: string;
 }
 
-/**
- * AI button configuration
- */
 export interface AIButtonConfig {
   position: 'top' | 'bottom' | 'left' | 'right';
   offset?: number;
   zIndex?: number;
 }
 
-/**
- * Page hook message
- */
 export interface PageHookMessage {
   __xExporter: boolean;
   channel: string;
@@ -59,21 +44,12 @@ export interface PageHookMessage {
   message?: string;
 }
 
-/**
- * Localization data structure
- */
 export interface TranslationData {
   [key: string]: string;
 }
 
-/**
- * Supported languages
- */
 export type SupportedLanguage = 'en' | 'zh_CN' | 'ja' | 'ko' | 'es' | 'fr' | 'de';
 
-/**
- * Content script context
- */
 export interface ContentScriptContext {
   isActive: boolean;
   currentUrl: string;

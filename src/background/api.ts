@@ -3,7 +3,7 @@
  */
 
 import { API_ENDPOINT } from '@shared/constants';
-import type { AuthToken, Website } from '@shared/types';
+import type { Website } from '@shared/types';
 import { getToken } from './auth';
 
 /**

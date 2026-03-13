@@ -1,14 +1,19 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { resolve } from 'path';
-import { writeFileSync, existsSync, readFileSync } from 'fs';
+import { writeFileSync, existsSync, readFileSync, cpSync, mkdirSync } from 'fs';
 
 function copyPublicFiles() {
-  // Copy HTML files to dist after build
-  const htmlFiles = ['popup.html', 'sidepanel.html', 'options.html'];
   const publicDir = resolve(__dirname, 'public');
   const distDir = resolve(__dirname, 'dist');
 
+  // Ensure dist directory exists
+  if (!existsSync(distDir)) {
+    mkdirSync(distDir, { recursive: true });
+  }
+
+  // Copy HTML files with script path replacement
+  const htmlFiles = ['popup.html', 'sidepanel.html', 'options.html'];
   htmlFiles.forEach(file => {
     const srcPath = resolve(publicDir, file);
     const destPath = resolve(distDir, file);
@@ -16,7 +21,6 @@ function copyPublicFiles() {
     if (existsSync(srcPath)) {
       let content = readFileSync(srcPath, 'utf-8');
 
-      // Replace script src to point to built files (use relative paths for Chrome extension)
       if (file === 'popup.html') {
         content = content.replace('/src/ui/main.tsx', 'popup.js');
       } else if (file === 'sidepanel.html') {
@@ -28,13 +32,47 @@ function copyPublicFiles() {
       writeFileSync(destPath, content);
     }
   });
+
+  // Copy manifest.json
+  const manifestSrc = resolve(publicDir, 'manifest.json');
+  const manifestDest = resolve(distDir, 'manifest.json');
+  if (existsSync(manifestSrc)) {
+    let manifest = readFileSync(manifestSrc, 'utf-8');
+    // Fix content script path - Vite outputs to dist root, not content-scripts/
+    const manifestObj = JSON.parse(manifest);
+    if (manifestObj.content_scripts?.[0]?.js) {
+      manifestObj.content_scripts[0].js = ['content.js'];
+    }
+    // Fix page-controller path in web_accessible_resources
+    // background.js will inject 'page-controller.js' directly
+    writeFileSync(manifestDest, JSON.stringify(manifestObj, null, 2));
+  }
+
+  // Copy _locales
+  const localesDir = resolve(publicDir, '_locales');
+  const localesDest = resolve(distDir, '_locales');
+  if (existsSync(localesDir)) {
+    cpSync(localesDir, localesDest, { recursive: true });
+  }
+
+  // Copy icons
+  const iconsDir = resolve(publicDir, 'icons');
+  const iconsDest = resolve(distDir, 'icons');
+  if (existsSync(iconsDir)) {
+    cpSync(iconsDir, iconsDest, { recursive: true });
+  }
 }
 
 export default defineConfig({
   plugins: [
-    react(),
+    react({
+      jsxImportSource: '@emotion/react',
+      babel: {
+        plugins: ['@emotion/babel-plugin'],
+      },
+    }),
     {
-      name: 'copy-html-files',
+      name: 'copy-extension-files',
       closeBundle: copyPublicFiles,
     },
   ],
@@ -69,16 +107,16 @@ export default defineConfig({
         chunkFileNames: 'chunks/[name]-[hash].js',
         assetFileNames: 'assets/[name]-[hash].[ext]',
         manualChunks: (id) => {
-          // Vendor chunks for React UI only
           if (id.includes('node_modules')) {
-            if (id.includes('react') || id.includes('react-dom')) {
+            if (
+              id.includes('react') ||
+              id.includes('react-dom') ||
+              id.includes('@emotion')
+            ) {
               return 'react-vendor';
             }
             if (id.includes('@radix-ui')) {
               return 'ui-vendor';
-            }
-            if (id.includes('@emotion')) {
-              return 'emotion-vendor';
             }
           }
         },

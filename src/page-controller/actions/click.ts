@@ -2,16 +2,13 @@
  * Click action for page automation
  */
 
-import type { ElementRef } from '../types';
+import type { ElementRef, InteractiveElement } from '../types';
 import { getElementByIndex } from '../utils/common';
 import { simulateClick } from '../utils/events';
 
-/**
- * Click element by index or reference
- */
 export async function clickElement(
   elementRef: ElementRef | HTMLElement,
-  selectorMap: Map<number, any>
+  selectorMap: Map<number, InteractiveElement>
 ): Promise<void> {
   let element: HTMLElement;
 
@@ -24,12 +21,9 @@ export async function clickElement(
   await simulateClick(element);
 }
 
-/**
- * Double click element
- */
 export async function doubleClickElement(
   elementRef: ElementRef | HTMLElement,
-  selectorMap: Map<number, any>
+  selectorMap: Map<number, InteractiveElement>
 ): Promise<void> {
   let element: HTMLElement;
 
@@ -43,12 +37,9 @@ export async function doubleClickElement(
   await simulateClick(element);
 }
 
-/**
- * Hover over element
- */
 export async function hoverElement(
   elementRef: ElementRef | HTMLElement,
-  selectorMap: Map<number, any>
+  selectorMap: Map<number, InteractiveElement>
 ): Promise<void> {
   let element: HTMLElement;
 

@@ -1,42 +1,9 @@
 /**
  * Secure messenger for page-hook → content-script communication
- * Uses postMessage with origin validation
  */
 
-// Channel name for communication
 export const HOOK_CHANNEL = 'x-exporter-bridge';
 
-// Allowed origins for postMessage (extension pages only)
-const ALLOWED_ORIGINS = new Set<string>();
-
-/**
- * Initialize allowed origins from current script
- * The content script should inject this page-hook with data-origin attribute
- */
-function getAllowedOrigins(): Set<string> {
-  try {
-    const script = document.currentScript as HTMLScriptElement;
-    const origin = script?.dataset.origin;
-
-    if (origin) {
-      return new Set([origin]);
-    }
-  } catch {}
-
-  // Fallback: try to get extension URL from chrome runtime if available
-  try {
-    const extensionId = (window as any).chrome?.runtime?.id;
-    if (extensionId) {
-      return new Set([`chrome-extension://${extensionId}`]);
-    }
-  } catch {}
-
-  return ALLOWED_ORIGINS;
-}
-
-/**
- * Message payload types
- */
 export interface CaptureMessage {
   type: 'capture';
   url: string;
@@ -54,41 +21,22 @@ export interface LogMessage {
 
 export type HookMessage = CaptureMessage | LogMessage;
 
-/**
- * Send message to content script via postMessage
- * Uses specific origin for security instead of wildcard
- */
-export function postMessage(payload: HookMessage): void {
-  const allowedOrigins = getAllowedOrigins();
-
+export function postHookMessage(payload: HookMessage): void {
   try {
-    // If we have specific origins, use them; otherwise fall back to wildcard for compatibility
     const message = {
       __xExporter: true,
       channel: HOOK_CHANNEL,
       ...payload,
     };
 
-    if (allowedOrigins.size > 0) {
-      // Send to each allowed origin
-      allowedOrigins.forEach((origin) => {
-        window.postMessage(message, origin);
-      });
-    } else {
-      // Fallback: wildcard (less secure, but maintains compatibility)
-      console.warn('[PageHook] No allowed origins configured, using wildcard');
-      window.postMessage(message, '*');
-    }
+    window.postMessage(message, '*');
   } catch (error) {
     console.error('[PageHook] Failed to post message:', error);
   }
 }
 
-/**
- * Log message
- */
 export function log(level: LogMessage['level'], message: string, url?: string): void {
-  postMessage({
+  postHookMessage({
     type: 'log',
     level,
     message,
@@ -96,11 +44,8 @@ export function log(level: LogMessage['level'], message: string, url?: string): 
   });
 }
 
-/**
- * Capture response
- */
 export function captureResponse(url: string, status: number, body: string): void {
-  postMessage({
+  postHookMessage({
     type: 'capture',
     url,
     status,

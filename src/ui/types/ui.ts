@@ -2,29 +2,11 @@
  * UI-related type definitions
  */
 
-/**
- * Button variants
- */
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
-
-/**
- * Button sizes
- */
 export type ButtonSize = 'sm' | 'md' | 'lg';
-
-/**
- * Input types
- */
 export type InputType = 'text' | 'email' | 'password' | 'url' | 'number' | 'textarea';
-
-/**
- * Task status
- */
 export type TaskStatus = 'idle' | 'running' | 'completed' | 'error' | 'paused';
 
-/**
- * Task step
- */
 export interface TaskStep {
   id: string;
   name: string;
@@ -33,9 +15,6 @@ export interface TaskStep {
   timestamp: number;
 }
 
-/**
- * Task
- */
 export interface Task {
   id: string;
   type: 'quick_fill' | 'quick_discover' | 'batch_submit';
@@ -47,9 +26,6 @@ export interface Task {
   error?: string;
 }
 
-/**
- * Batch submit item
- */
 export interface BatchSubmitItem {
   url: string;
   websiteId?: string;
@@ -58,9 +34,6 @@ export interface BatchSubmitItem {
   result?: any;
 }
 
-/**
- * Auth state
- */
 export interface AuthState {
   isAuthenticated: boolean;
   token: string | null;
@@ -73,9 +46,6 @@ export interface AuthState {
   error: string | null;
 }
 
-/**
- * Website
- */
 export interface Website {
   id: string;
   name: string;
@@ -87,9 +57,6 @@ export interface Website {
   updatedAt?: number;
 }
 
-/**
- * Website field
- */
 export interface WebsiteField {
   name: string;
   type: string;
@@ -99,9 +66,6 @@ export interface WebsiteField {
   value?: string;
 }
 
-/**
- * Quick fill settings
- */
 export interface QuickFillSettings {
   enabled: boolean;
   autoDetect: boolean;

@@ -1,11 +1,7 @@
 /**
  * Type definitions for Page Controller
- * Handles page automation and DOM interaction
  */
 
-/**
- * Interactive element in the DOM tree
- */
 export interface InteractiveElement {
   ref: HTMLElement;
   index: number;
@@ -16,9 +12,6 @@ export interface InteractiveElement {
   boundingRect: DOMRect;
 }
 
-/**
- * DOM tree node for accessibility snapshot
- */
 export interface DOMTreeNode {
   id: number;
   role: string | null;
@@ -33,9 +26,6 @@ export interface DOMTreeNode {
   boundingRect?: DOMRect;
 }
 
-/**
- * Page state information
- */
 export interface PageState {
   url: string;
   title: string;
@@ -51,9 +41,6 @@ export interface PageState {
   content: string;
 }
 
-/**
- * Element selector configuration
- */
 export interface SelectorConfig {
   doHighlightElements: boolean;
   focusHighlightIndex: number;
@@ -65,32 +52,20 @@ export interface SelectorConfig {
   highlightLabelOpacity: number;
 }
 
-/**
- * Scroll direction
- */
 export type ScrollDirection = 'up' | 'down' | 'left' | 'right';
 
-/**
- * Scroll options
- */
 export interface ScrollOptions {
   direction: ScrollDirection;
-  amount?: number; // pixels to scroll
-  targetElement?: HTMLElement; // scroll specific element
+  amount?: number;
+  targetElement?: HTMLElement;
 }
 
-/**
- * File upload data
- */
 export interface FileUploadData {
   name: string;
   mimeType: string;
-  data: string; // base64 encoded
+  data: string;
 }
 
-/**
- * Page control message types
- */
 export type PageControlAction =
   | 'click'
   | 'input'
@@ -110,36 +85,27 @@ export interface PageControlMessage {
   payload?: any;
 }
 
-/**
- * Element reference by index
- */
 export interface ElementRef {
   index: number;
 }
 
-/**
- * Text input options
- */
 export interface TextInputOptions {
   element: ElementRef | HTMLElement;
   text: string;
   clearFirst?: boolean;
 }
 
-/**
- * Select option options
- */
 export interface SelectOptionOptions {
   element: ElementRef | HTMLElement;
   option: string;
 }
 
 /**
- * DOM tree result
+ * DOM tree result - selectorMap uses InteractiveElement (matches implementation)
  */
 export interface DOMTreeResult {
   tree: DOMTreeNode[];
-  selectorMap: Map<number, HTMLElement>;
+  selectorMap: Map<number, InteractiveElement>;
   textMap: Map<number, string>;
   flatString: string;
 }

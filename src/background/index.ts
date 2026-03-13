@@ -1,12 +1,10 @@
 /**
  * Background Service Worker Entry Point
- * Main initialization and event listener setup
  */
 
 import { setupTabListeners } from './tabs';
 import { setupMessageRouter } from './messages';
 import { setupContextMenu, setupContextMenuListener } from './context-menu';
-import { STORAGE_KEYS } from '@shared/constants';
 
 const TAG = '[autofill Background]';
 
@@ -34,12 +32,10 @@ function handleInstall(): void {
 
     setupSidePanel();
 
-    // Initialize settings from storage
     chrome.storage.local.get(['pluginEnabled', 'contextMenuEnabled'], (result) => {
       const pluginEnabled = result.pluginEnabled !== false;
       const contextMenuEnabled = result.contextMenuEnabled === true;
 
-      // Setup context menu if plugin is enabled and context menu is enabled
       if (pluginEnabled && contextMenuEnabled) {
         setupContextMenu();
       }
@@ -74,23 +70,13 @@ function handleActionClick(): void {
 function initialize(): void {
   console.log(TAG, 'Setting up event listeners...');
 
-  // Setup tab change listeners
   setupTabListeners();
-
-  // Setup message router
   setupMessageRouter();
-
-  // Setup context menu
   setupContextMenuListener();
-
-  // Setup install handler
   handleInstall();
-
-  // Setup action click handler
   handleActionClick();
 
   console.log(TAG, 'Background service worker initialized');
 }
 
-// Start initialization
 initialize();

@@ -37,25 +37,15 @@ export async function getToken(): Promise<AuthToken | null> {
 
 /**
  * Get or create client ID
- * Uses localStorage first, falls back to chrome.storage.local
  */
 export function getOrCreateClientId(): string {
-  const clientId = tryGetClientIdFromLocalStorage() || generateClientId();
-  saveClientIdToStorages(clientId);
+  const clientId = generateClientId();
+  saveClientIdToStorage(clientId);
   return clientId;
-}
-
-function tryGetClientIdFromLocalStorage(): string | null {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEYS.CLIENT_ID);
-    if (stored) return stored;
-  } catch {}
-  return null;
 }
 
 function generateClientId(): string {
   try {
-    // Try crypto.randomUUID() first, fall back to random values
     return crypto.randomUUID?.() ?? generateFallbackId();
   } catch {
     return generateFallbackId();
@@ -67,18 +57,16 @@ function generateFallbackId(): string {
   return Array.from(values).join('');
 }
 
-function saveClientIdToStorages(clientId: string): void {
-  try {
-    localStorage.setItem(STORAGE_KEYS.CLIENT_ID, clientId);
-  } catch {}
+function saveClientIdToStorage(clientId: string): void {
   try {
     chrome.storage.local.set({ [STORAGE_KEYS.CLIENT_ID]: clientId });
-  } catch {}
+  } catch {
+    // Ignore storage errors
+  }
 }
 
 /**
  * Start OAuth authentication flow
- * Opens a new tab with OAuth URL and polls for token
  */
 export class AuthFlow {
   private isActive = false;
@@ -98,11 +86,8 @@ export class AuthFlow {
       const authUrl = `${API_BASE_URL}/auth/signin?client_id=${encodeURIComponent(clientId)}&redirect_uri=chrome`;
 
       // Open OAuth tab
-      this.authTabId = await new Promise<number>((resolve) => {
-        chrome.tabs.create({ url: authUrl, active: true }, (tab) => {
-          resolve(tab?.id ?? 0);
-        });
-      });
+      const tab = await chrome.tabs.create({ url: authUrl, active: true });
+      this.authTabId = tab?.id ?? null;
 
       // Start polling for token
       await this.pollForToken(clientId);
@@ -129,20 +114,19 @@ export class AuthFlow {
               token_type: data.data.token_type || 'Bearer',
             };
 
-            // Save token
             await saveToken(token);
 
-            // Notify all listeners
             chrome.runtime.sendMessage({
               type: 'auth.success',
               payload: token,
             }).catch(() => {});
 
-            // Close auth tab
             if (this.authTabId !== null) {
               try {
                 chrome.tabs.remove(this.authTabId);
-              } catch {}
+              } catch {
+                // Tab may already be closed
+              }
             }
 
             this.stop();

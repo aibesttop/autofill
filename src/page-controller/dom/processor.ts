@@ -15,12 +15,9 @@ const DEFAULT_CONFIG: SelectorConfig = {
   highlightLabelOpacity: 0.5,
 };
 
-/**
- * Process DOM tree and create accessibility snapshot
- */
 export class DOMProcessor {
   private config: SelectorConfig;
-  private elementCounter: number = 0;
+  private elementCounter = 0;
   private selectorMap: Map<number, InteractiveElement> = new Map();
   private textMap: Map<number, string> = new Map();
 
@@ -28,16 +25,10 @@ export class DOMProcessor {
     this.config = { ...DEFAULT_CONFIG, ...config };
   }
 
-  /**
-   * Get current configuration
-   */
   getConfig(): SelectorConfig {
     return { ...this.config };
   }
 
-  /**
-   * Build flat DOM tree with interactive elements
-   */
   buildFlatTree(): DOMTreeNode[] {
     this.reset();
 
@@ -51,13 +42,11 @@ export class DOMProcessor {
             return NodeFilter.FILTER_REJECT;
           }
 
-          // Check blacklist
           const tagName = node.tagName.toLowerCase();
           if (this.config.interactiveBlacklist.includes(tagName)) {
             return NodeFilter.FILTER_REJECT;
           }
 
-          // Check if element is visible
           const style = window.getComputedStyle(node);
           if (style.display === 'none' || style.visibility === 'hidden') {
             return NodeFilter.FILTER_SKIP;
@@ -70,19 +59,20 @@ export class DOMProcessor {
 
     let currentNode = walker.currentNode as HTMLElement;
     while (currentNode) {
-      const node = this.processElement(currentNode);
-      if (node) {
-        rootNodes.push(node);
+      if (currentNode instanceof HTMLElement) {
+        const node = this.processElement(currentNode);
+        if (node) {
+          rootNodes.push(node);
+        }
       }
-      currentNode = walker.nextNode() as HTMLElement;
+      const nextNode = walker.nextNode();
+      if (!nextNode) break;
+      currentNode = nextNode as HTMLElement;
     }
 
     return rootNodes;
   }
 
-  /**
-   * Process single element
-   */
   private processElement(element: HTMLElement): DOMTreeNode | null {
     const tagName = element.tagName.toLowerCase();
     const isInteractive = this.isInteractiveElement(element);
@@ -96,29 +86,35 @@ export class DOMProcessor {
       boundingRect: element.getBoundingClientRect(),
     };
 
-    // Add value for inputs
     if (element instanceof HTMLInputElement) {
       node.value = element.value;
       node.checked = element.checked;
     }
 
-    // Add selected state for options
     if (element instanceof HTMLOptionElement) {
       node.selected = element.selected;
     }
 
-    // Add expanded state
     const expanded = element.getAttribute('aria-expanded');
     if (expanded) {
       node.expanded = expanded === 'true';
     }
 
-    // Add disabled state
-    if (element.disabled) {
+    // Check disabled - use hasAttribute for generic HTMLElement, property for form elements
+    if (
+      element instanceof HTMLInputElement ||
+      element instanceof HTMLButtonElement ||
+      element instanceof HTMLSelectElement ||
+      element instanceof HTMLTextAreaElement ||
+      element instanceof HTMLFieldSetElement
+    ) {
+      if (element.disabled) {
+        node.disabled = true;
+      }
+    } else if (element.getAttribute('disabled') !== null) {
       node.disabled = true;
     }
 
-    // Store interactive elements in map
     if (isInteractive) {
       const interactive: InteractiveElement = {
         ref: element,
@@ -127,7 +123,7 @@ export class DOMProcessor {
         selector: this.generateSelector(element),
         role: node.role || undefined,
         tagName,
-        boundingRect: node.boundingRect,
+        boundingRect: node.boundingRect!,
       };
 
       this.selectorMap.set(node.id, interactive);
@@ -137,71 +133,40 @@ export class DOMProcessor {
     return node;
   }
 
-  /**
-   * Check if element is interactive
-   */
   private isInteractiveElement(element: HTMLElement): boolean {
     const tagName = element.tagName.toLowerCase();
 
-    // Check whitelist
     if (this.config.interactiveWhitelist.length > 0) {
       if (!this.config.interactiveWhitelist.includes(tagName)) {
         return false;
       }
     }
 
-    // Check blacklist
     if (this.config.interactiveBlacklist.includes(tagName)) {
       return false;
     }
 
-    // Check common interactive elements
     const interactiveTags = [
-      'a',
-      'button',
-      'input',
-      'select',
-      'textarea',
-      'option',
-      'label',
-      'fieldset',
+      'a', 'button', 'input', 'select', 'textarea', 'option', 'label', 'fieldset',
     ];
 
-    if (interactiveTags.includes(tagName)) {
-      return true;
-    }
+    if (interactiveTags.includes(tagName)) return true;
 
-    // Check for ARIA roles
     const role = element.getAttribute('role');
-    if (role) {
-      return true;
-    }
+    if (role) return true;
 
-    // Check for event listeners
     const style = window.getComputedStyle(element);
-    if (style.cursor === 'pointer') {
-      return true;
-    }
+    if (style.cursor === 'pointer') return true;
 
-    // Check for tabindex
-    if (element.tabIndex >= 0) {
-      return true;
-    }
+    if (element.tabIndex >= 0) return true;
 
     return false;
   }
 
-  /**
-   * Get ARIA role
-   */
   private getAriaRole(element: HTMLElement): string | null {
-    // Explicit role
     const explicitRole = element.getAttribute('role');
-    if (explicitRole) {
-      return explicitRole;
-    }
+    if (explicitRole) return explicitRole;
 
-    // Implicit role based on tag
     const tagName = element.tagName.toLowerCase();
     const implicitRoles: Record<string, string> = {
       button: 'button',
@@ -215,57 +180,34 @@ export class DOMProcessor {
     return implicitRoles[tagName] || null;
   }
 
-  /**
-   * Get accessible name
-   */
   private getAccessibleName(element: HTMLElement): string {
-    // Check aria-label
     const ariaLabel = element.getAttribute('aria-label');
-    if (ariaLabel) {
-      return ariaLabel;
-    }
+    if (ariaLabel) return ariaLabel;
 
-    // Check placeholder for inputs
     if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
-      if (element.placeholder) {
-        return element.placeholder;
-      }
-      if (element.value) {
-        return element.value;
-      }
+      if (element.placeholder) return element.placeholder;
+      if (element.value) return element.value;
     }
 
-    // Check alt text for images
     if (element instanceof HTMLImageElement) {
       return element.alt || 'Image';
     }
 
-    // Get text content
     return element.textContent?.trim() || '';
   }
 
-  /**
-   * Generate CSS selector for element
-   */
   private generateSelector(element: HTMLElement): string {
-    if (element.id) {
-      return `#${element.id}`;
-    }
+    if (element.id) return `#${element.id}`;
 
-    if (element.className) {
+    if (element.className && typeof element.className === 'string') {
       const classes = element.className.split(' ').filter((c) => c).join('.');
-      if (classes) {
-        return `${element.tagName}.${classes}`;
-      }
+      if (classes) return `${element.tagName.toLowerCase()}.${classes}`;
     }
 
     return element.tagName.toLowerCase();
   }
 
-  /**
-   * Convert tree to string representation
-   */
-  treeToString(nodes: DOMTreeNode[], indent: string = ''): string {
+  treeToString(nodes: DOMTreeNode[], indent = ''): string {
     let result = '';
 
     for (const node of nodes) {
@@ -282,9 +224,6 @@ export class DOMProcessor {
     return result;
   }
 
-  /**
-   * Get complete result
-   */
   getResult(): DOMTreeResult {
     const tree = this.buildFlatTree();
     const flatString = this.treeToString(tree);
@@ -297,20 +236,18 @@ export class DOMProcessor {
     };
   }
 
-  /**
-   * Reset processor state
-   */
   private reset(): void {
     this.elementCounter = 0;
     this.selectorMap.clear();
     this.textMap.clear();
   }
 
-  /**
-   * Get element by index
-   */
   getElementByIndex(index: number): HTMLElement | null {
     const item = this.selectorMap.get(index);
     return item?.ref || null;
+  }
+
+  getSelectorMap(): Map<number, InteractiveElement> {
+    return this.selectorMap;
   }
 }
