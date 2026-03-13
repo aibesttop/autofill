@@ -58,6 +58,10 @@ const CUSTOM_SELECT_OPTION_SELECTORS = [
   '[role="menuitemradio"]',
   '[role="menuitemcheckbox"]',
   '[role="checkbox"]',
+  '[cmdk-item]',
+  '[data-radix-collection-item]',
+  '[data-slot="command-item"]',
+  '[data-select-item]',
 ] as const;
 
 const CUSTOM_SELECT_CONTAINER_SELECTORS = [
@@ -66,7 +70,31 @@ const CUSTOM_SELECT_CONTAINER_SELECTORS = [
   '[role="dialog"]',
   '[data-radix-popper-content-wrapper]',
   '[data-slot="content"]',
+  '[data-slot="popover-content"]',
+  '[data-slot="command-list"]',
+  '[data-slot="dropdown-menu-content"]',
   '[data-state="open"]',
+  '[cmdk-list]',
+] as const;
+
+const LOOSE_CUSTOM_SELECT_OPTION_SELECTORS = [
+  'label',
+  'button',
+  'li',
+  'div',
+  '[tabindex]',
+  '[data-value]',
+  '[data-state]',
+  '[aria-selected]',
+  '[aria-checked]',
+] as const;
+
+const POPUP_DISCOVERY_SELECTORS = [
+  'div',
+  'section',
+  'ul',
+  'aside',
+  ...CUSTOM_SELECT_CONTAINER_SELECTORS,
 ] as const;
 
 function normalizeText(value: string | undefined): string {
@@ -85,6 +113,10 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => {
     window.setTimeout(resolve, ms);
   });
+}
+
+function uniqueElements<T extends object>(values: T[]): T[] {
+  return Array.from(new Set(values));
 }
 
 function getHostname(url: string): string {
@@ -189,6 +221,20 @@ function getProfileTags(profile: SelectedWebsiteProfile): string[] {
 
 function getProfileCategoryTerms(profile: SelectedWebsiteProfile): string[] {
   return unique(getProfileCategories(profile).flatMap((category) => getCategoryTerms(category)));
+}
+
+function getPreferredSearchTerms(field: FormField, profile: SelectedWebsiteProfile): string[] {
+  const descriptor = getFieldDescriptor(field);
+  const baseTerms = isTagField(descriptor)
+    ? [...getProfileTags(profile), ...getProfileCategories(profile)]
+    : [...getProfileCategories(profile), ...getProfileTags(profile)];
+
+  const expandedTerms = baseTerms.flatMap((term) => [
+    term,
+    ...tokenize(term).filter((token) => token.length > 2 || token === 'ai'),
+  ]);
+
+  return unique(expandedTerms.map((term) => term.trim()).filter(Boolean));
 }
 
 function buildDescription(profile: SelectedWebsiteProfile): string {
@@ -423,6 +469,22 @@ function getSelectChoiceScore(
   return optionScore;
 }
 
+function getSearchTermChoiceScore(choice: SelectChoice, term: string): number {
+  const normalizedTerm = normalizeText(term);
+  const optionTexts = unique([normalizeText(choice.label), normalizeText(choice.value)]).filter(Boolean);
+
+  let optionScore = 0;
+  for (const optionText of optionTexts) {
+    optionScore = Math.max(optionScore, getTextSimilarityScore(optionText, normalizedTerm));
+  }
+
+  return optionScore;
+}
+
+function getChoiceKey(choice: SelectChoice): string {
+  return `${normalizeText(choice.value)}::${normalizeText(choice.label)}`;
+}
+
 function getBestSelectChoice(
   choices: SelectChoice[],
   field: FormField,
@@ -457,6 +519,19 @@ function getBestSelectChoices(
     .sort((left, right) => right.score - left.score)
     .slice(0, desiredCount)
     .map((item) => item.choice);
+}
+
+function getBestChoiceForSearchTerm(choices: SelectChoice[], term: string): SelectChoice | null {
+  let bestMatch: { choice: SelectChoice; score: number } | null = null;
+
+  for (const choice of choices) {
+    const optionScore = getSearchTermChoiceScore(choice, term);
+    if (!bestMatch || optionScore > bestMatch.score) {
+      bestMatch = { choice, score: optionScore };
+    }
+  }
+
+  return bestMatch && bestMatch.score >= 50 ? bestMatch.choice : null;
 }
 
 function setSelectValues(element: HTMLSelectElement, values: string[]): void {
@@ -542,6 +617,18 @@ function isVisibleElement(element: Element | null): element is HTMLElement {
   return rect.width > 0 && rect.height > 0;
 }
 
+function getElementDepth(element: HTMLElement): number {
+  let depth = 0;
+  let current: HTMLElement | null = element;
+
+  while (current?.parentElement) {
+    depth += 1;
+    current = current.parentElement;
+  }
+
+  return depth;
+}
+
 function getCurrentCustomSelectText(element: HTMLElement): string {
   return normalizeText(
     element.getAttribute('aria-valuetext') ||
@@ -617,22 +704,41 @@ function isCustomOptionCandidate(element: HTMLElement): boolean {
     element.hasAttribute('aria-checked') ||
     element.hasAttribute('data-state') ||
     element.hasAttribute('data-value');
+  const hasPointerCursor = window.getComputedStyle(element).cursor === 'pointer';
+  const hasTabIndex = element.hasAttribute('tabindex');
+  const interactiveTag =
+    element.tagName === 'LABEL' ||
+    element.tagName === 'BUTTON' ||
+    element.tagName === 'LI';
   const actionableRole =
     role === 'option' ||
     role === 'checkbox' ||
     role === 'menuitemcheckbox' ||
     role === 'menuitemradio';
 
-  if (!(actionableRole || hasCheckbox || hasState || element.tagName === 'LABEL')) {
+  if (!(actionableRole || hasCheckbox || hasState || interactiveTag || hasPointerCursor || hasTabIndex)) {
     return false;
   }
 
   const text = normalizeText(element.textContent || element.getAttribute('aria-label') || '');
-  if (!text) {
+  if (!text || text.length > 120) {
     return false;
   }
 
   if (containsAny(text, ['search'])) {
+    return false;
+  }
+
+  const childOptionCount = element.querySelectorAll(
+    [...CUSTOM_SELECT_OPTION_SELECTORS, ...LOOSE_CUSTOM_SELECT_OPTION_SELECTORS].join(', ')
+  ).length;
+  if (
+    element.tagName === 'DIV' &&
+    childOptionCount > 4 &&
+    !hasCheckbox &&
+    !hasState &&
+    !hasPointerCursor
+  ) {
     return false;
   }
 
@@ -674,13 +780,14 @@ function buildCustomSelectChoice(element: HTMLElement): SelectChoice | null {
 function getCustomOptionSelector(): string {
   return [
     ...CUSTOM_SELECT_OPTION_SELECTORS,
-    '[aria-selected]',
-    '[aria-checked]',
-    '[data-value]',
-    'label',
-    'button',
-    'li',
+    ...LOOSE_CUSTOM_SELECT_OPTION_SELECTORS,
   ].join(', ');
+}
+
+function getLoosePopupOptionElements(container: HTMLElement): HTMLElement[] {
+  return Array.from(
+    container.querySelectorAll<HTMLElement>(LOOSE_CUSTOM_SELECT_OPTION_SELECTORS.join(', '))
+  ).filter(isCustomOptionCandidate);
 }
 
 function getControlledPopupContainers(element: HTMLElement): HTMLElement[] {
@@ -698,21 +805,164 @@ function getVisibleCustomOptionElements(element: HTMLElement): HTMLElement[] {
   const optionSelector = getCustomOptionSelector();
 
   if (controlledContainers.length > 0) {
-    return controlledContainers.flatMap((container) =>
-      Array.from(container.querySelectorAll<HTMLElement>(optionSelector)).filter(isCustomOptionCandidate)
-    );
+    return uniqueElements(
+      controlledContainers.flatMap((container) => [
+        ...Array.from(container.querySelectorAll<HTMLElement>(optionSelector)).filter(isCustomOptionCandidate),
+        ...getLoosePopupOptionElements(container),
+      ])
+    ).sort((left, right) => getElementDepth(right) - getElementDepth(left));
   }
 
   const popupContainers = Array.from(
     document.querySelectorAll<HTMLElement>(CUSTOM_SELECT_CONTAINER_SELECTORS.join(', '))
   ).filter(isVisibleElement);
   if (popupContainers.length > 0) {
-    return popupContainers.flatMap((container) =>
-      Array.from(container.querySelectorAll<HTMLElement>(optionSelector)).filter(isCustomOptionCandidate)
-    );
+    return uniqueElements(
+      popupContainers.flatMap((container) => [
+        ...Array.from(container.querySelectorAll<HTMLElement>(optionSelector)).filter(isCustomOptionCandidate),
+        ...getLoosePopupOptionElements(container),
+      ])
+    ).sort((left, right) => getElementDepth(right) - getElementDepth(left));
   }
 
-  return Array.from(document.querySelectorAll<HTMLElement>(optionSelector)).filter(isCustomOptionCandidate);
+  return uniqueElements(
+    Array.from(document.querySelectorAll<HTMLElement>(optionSelector)).filter(isCustomOptionCandidate)
+  ).sort((left, right) => getElementDepth(right) - getElementDepth(left));
+}
+
+function getNearbyPopupContainers(trigger: HTMLElement): HTMLElement[] {
+  const triggerRect = trigger.getBoundingClientRect();
+
+  return Array.from(
+    document.body.querySelectorAll<HTMLElement>(POPUP_DISCOVERY_SELECTORS.join(', '))
+  )
+    .filter((candidate) => {
+      if (
+        !isVisibleElement(candidate) ||
+        candidate === trigger ||
+        candidate.contains(trigger) ||
+        trigger.contains(candidate)
+      ) {
+        return false;
+      }
+
+      const rect = candidate.getBoundingClientRect();
+      if (rect.width < 140 || rect.height < 60) {
+        return false;
+      }
+
+      const overlapsHorizontally = rect.left <= triggerRect.right + 48 && rect.right >= triggerRect.left - 48;
+      const isNearbyVertically = rect.top <= triggerRect.bottom + 320 && rect.bottom >= triggerRect.top - 24;
+      if (!overlapsHorizontally || !isNearbyVertically) {
+        return false;
+      }
+
+      const hasSearch = !!getSearchInput(candidate);
+      const hasCheckboxes = !!candidate.querySelector('input[type="checkbox"], [role="checkbox"]');
+      const hasChoiceRows =
+        candidate.querySelectorAll(
+          [...CUSTOM_SELECT_OPTION_SELECTORS, ...LOOSE_CUSTOM_SELECT_OPTION_SELECTORS].join(', ')
+        ).length >= 2;
+
+      return hasSearch || hasCheckboxes || hasChoiceRows;
+    })
+    .sort((left, right) => {
+      const leftRect = left.getBoundingClientRect();
+      const rightRect = right.getBoundingClientRect();
+      const leftDistance = Math.abs(leftRect.top - triggerRect.bottom);
+      const rightDistance = Math.abs(rightRect.top - triggerRect.bottom);
+      return leftDistance - rightDistance;
+    });
+}
+
+function getPopupContainers(element: HTMLElement): HTMLElement[] {
+  const controlledContainers = getControlledPopupContainers(element);
+  if (controlledContainers.length > 0) {
+    return controlledContainers;
+  }
+
+  const knownContainers = Array.from(
+    document.querySelectorAll<HTMLElement>(CUSTOM_SELECT_CONTAINER_SELECTORS.join(', '))
+  ).filter(isVisibleElement);
+  if (knownContainers.length > 0) {
+    return knownContainers;
+  }
+
+  return getNearbyPopupContainers(element);
+}
+
+function getSearchInput(container: HTMLElement): HTMLInputElement | HTMLTextAreaElement | null {
+  const candidate = container.querySelector<HTMLInputElement | HTMLTextAreaElement>(
+    [
+      'input[type="search"]',
+      'input[placeholder*="Search" i]',
+      'input[aria-label*="search" i]',
+      'input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"])',
+      'textarea',
+    ].join(', ')
+  );
+
+  if (candidate instanceof HTMLInputElement || candidate instanceof HTMLTextAreaElement) {
+    return candidate;
+  }
+
+  return null;
+}
+
+function setTextControlValue(
+  element: HTMLInputElement | HTMLTextAreaElement,
+  value: string
+): void {
+  if (element instanceof HTMLTextAreaElement) {
+    nativeTextAreaValueSetter?.call(element, value);
+  } else {
+    nativeInputValueSetter?.call(element, value);
+  }
+
+  if (element.value !== value) {
+    element.value = value;
+  }
+
+  element.dispatchEvent(new Event('input', { bubbles: true }));
+  element.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+function collectVisibleCustomChoices(trigger: HTMLElement): SelectChoice[] {
+  return getVisibleCustomOptionElements(trigger)
+    .map(buildCustomSelectChoice)
+    .filter((choice): choice is SelectChoice => choice !== null)
+    .filter((choice) => !containsAny(normalizeText(choice.label || choice.value), [...SELECT_PLACEHOLDER_TERMS]));
+}
+
+function getScrollablePopupContainers(trigger: HTMLElement): HTMLElement[] {
+  return uniqueElements(
+    getPopupContainers(trigger).flatMap((container) => [
+      container,
+      ...Array.from(container.querySelectorAll<HTMLElement>('div, ul, ol, section')),
+    ])
+  ).filter((container) => isVisibleElement(container) && container.scrollHeight > container.clientHeight + 24);
+}
+
+function resetScrollPosition(container: HTMLElement): void {
+  container.scrollTop = 0;
+  container.dispatchEvent(new Event('scroll', { bubbles: true }));
+}
+
+function scrollPopupContainerStep(container: HTMLElement): boolean {
+  const maxScrollTop = container.scrollHeight - container.clientHeight;
+  if (maxScrollTop <= 0) {
+    return false;
+  }
+
+  const step = Math.max(Math.round(container.clientHeight * 0.72), 120);
+  const nextScrollTop = Math.min(container.scrollTop + step, maxScrollTop);
+  if (nextScrollTop <= container.scrollTop + 1) {
+    return false;
+  }
+
+  container.scrollTop = nextScrollTop;
+  container.dispatchEvent(new Event('scroll', { bubbles: true }));
+  return true;
 }
 
 async function openCustomSelect(element: HTMLElement): Promise<void> {
@@ -721,10 +971,156 @@ async function openCustomSelect(element: HTMLElement): Promise<void> {
   await delay(80);
 }
 
+async function findAndSelectChoicesWithSearch(
+  field: FormField,
+  profile: SelectedWebsiteProfile,
+  trigger: HTMLElement
+): Promise<number> {
+  const preferredTerms = getPreferredSearchTerms(field, profile);
+  if (preferredTerms.length === 0) {
+    return 0;
+  }
+
+  let selectedCount = 0;
+  const desiredCount = getDesiredChoiceCount(field, profile);
+  const selectedChoiceKeys = new Set<string>();
+
+  for (const term of preferredTerms) {
+    if (selectedCount >= desiredCount) {
+      break;
+    }
+
+    let popupContainers = getPopupContainers(trigger);
+    if (popupContainers.length === 0) {
+      await openCustomSelect(trigger);
+      popupContainers = getPopupContainers(trigger);
+    }
+
+    const searchInput = popupContainers.map(getSearchInput).find(Boolean) || null;
+    if (!searchInput) {
+      break;
+    }
+
+    searchInput.focus();
+    setTextControlValue(searchInput, term);
+    await delay(140);
+
+    const choices = collectVisibleCustomChoices(trigger);
+
+    const bestChoice = getBestChoiceForSearchTerm(
+      choices.filter((choice) => !selectedChoiceKeys.has(getChoiceKey(choice))),
+      term
+    );
+    if (!bestChoice?.element) {
+      continue;
+    }
+
+    const choiceKey = getChoiceKey(bestChoice);
+    if (selectedChoiceKeys.has(choiceKey)) {
+      continue;
+    }
+
+    if (bestChoice.selected) {
+      selectedChoiceKeys.add(choiceKey);
+      selectedCount += 1;
+      continue;
+    }
+
+    clickCustomChoice(bestChoice.element);
+    selectedChoiceKeys.add(choiceKey);
+    selectedCount += 1;
+    await delay(100);
+  }
+
+  const popupContainers = getPopupContainers(trigger);
+  const searchInput = popupContainers.map(getSearchInput).find(Boolean) || null;
+  if (searchInput) {
+    setTextControlValue(searchInput, '');
+    await delay(60);
+  }
+
+  return selectedCount;
+}
+
+async function findAndSelectChoicesByScrolling(
+  field: FormField,
+  profile: SelectedWebsiteProfile,
+  trigger: HTMLElement
+): Promise<number> {
+  const preferredTerms = getPreferredSearchTerms(field, profile);
+  if (preferredTerms.length === 0) {
+    return 0;
+  }
+
+  let selectedCount = 0;
+  const desiredCount = getDesiredChoiceCount(field, profile);
+  const selectedChoiceKeys = new Set<string>();
+
+  for (const term of preferredTerms) {
+    if (selectedCount >= desiredCount) {
+      break;
+    }
+
+    let popupContainers = getPopupContainers(trigger);
+    if (popupContainers.length === 0) {
+      await openCustomSelect(trigger);
+      popupContainers = getPopupContainers(trigger);
+    }
+
+    const scrollContainers = getScrollablePopupContainers(trigger);
+    scrollContainers.forEach(resetScrollPosition);
+    if (scrollContainers.length > 0) {
+      await delay(80);
+    }
+
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const bestChoice = getBestChoiceForSearchTerm(
+        collectVisibleCustomChoices(trigger).filter((choice) => !selectedChoiceKeys.has(getChoiceKey(choice))),
+        term
+      );
+      if (bestChoice?.element) {
+        const choiceKey = getChoiceKey(bestChoice);
+        if (selectedChoiceKeys.has(choiceKey)) {
+          break;
+        }
+
+        if (!bestChoice.selected) {
+          bestChoice.element.scrollIntoView({ block: 'nearest' });
+          clickCustomChoice(bestChoice.element);
+          await delay(100);
+        }
+
+        selectedChoiceKeys.add(choiceKey);
+        selectedCount += 1;
+        break;
+      }
+
+      const didScroll = scrollContainers.map(scrollPopupContainerStep).some(Boolean);
+      if (!didScroll) {
+        break;
+      }
+
+      await delay(100);
+    }
+  }
+
+  return selectedCount;
+}
+
 async function fillCustomSelect(field: FormField, profile: SelectedWebsiteProfile): Promise<boolean> {
   const trigger = field.element instanceof HTMLElement ? field.element : null;
   if (!trigger) {
     return false;
+  }
+
+  const selectedWithSearch = await findAndSelectChoicesWithSearch(field, profile, trigger);
+  if (selectedWithSearch > 0) {
+    return true;
+  }
+
+  const selectedWithScroll = await findAndSelectChoicesByScrolling(field, profile, trigger);
+  if (selectedWithScroll > 0) {
+    return true;
   }
 
   let optionElements = getVisibleCustomOptionElements(trigger);
@@ -739,10 +1135,7 @@ async function fillCustomSelect(field: FormField, profile: SelectedWebsiteProfil
     optionElements = getVisibleCustomOptionElements(trigger);
   }
 
-  const choices = optionElements
-    .map(buildCustomSelectChoice)
-    .filter((choice): choice is SelectChoice => choice !== null)
-    .filter((choice) => !containsAny(normalizeText(choice.label || choice.value), [...SELECT_PLACEHOLDER_TERMS]));
+  const choices = collectVisibleCustomChoices(trigger);
 
   if (choices.length === 0) {
     return false;
