@@ -6,9 +6,28 @@ import type { TabAction } from './TabsController';
 import { AGENT_MESSAGE_TYPES } from './message-types';
 
 const PREFIX = '[TabsController.background]';
+const NO_RECEIVER_ERROR = 'Could not establish connection. Receiving end does not exist.';
 
 function debug(...messages: any[]) {
   console.debug(`\x1b[90m${PREFIX}\x1b[0m`, ...messages);
+}
+
+function shouldIgnoreRuntimeMessageError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes(NO_RECEIVER_ERROR);
+}
+
+function broadcastTabChange(message: {
+  type: typeof AGENT_MESSAGE_TYPES.TAB_CHANGE;
+  action: 'created' | 'removed' | 'updated';
+  payload: Record<string, unknown>;
+}): void {
+  chrome.runtime.sendMessage(message).catch((error) => {
+    if (shouldIgnoreRuntimeMessageError(error)) {
+      return;
+    }
+
+    debug(`${message.action} broadcast error:`, error);
+  });
 }
 
 export function handleTabControlMessage(
@@ -127,40 +146,28 @@ export function setupTabChangeEvents() {
 
   chrome.tabs.onCreated.addListener((tab) => {
     debug('onCreated', tab);
-    chrome.runtime
-      .sendMessage({
-        type: AGENT_MESSAGE_TYPES.TAB_CHANGE,
-        action: 'created',
-        payload: { tab },
-      })
-      .catch((error) => {
-        debug('onCreated error:', error);
-      });
+    broadcastTabChange({
+      type: AGENT_MESSAGE_TYPES.TAB_CHANGE,
+      action: 'created',
+      payload: { tab },
+    });
   });
 
   chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
     debug('onRemoved', tabId, removeInfo);
-    chrome.runtime
-      .sendMessage({
-        type: AGENT_MESSAGE_TYPES.TAB_CHANGE,
-        action: 'removed',
-        payload: { tabId, removeInfo },
-      })
-      .catch((error) => {
-        debug('onRemoved error:', error);
-      });
+    broadcastTabChange({
+      type: AGENT_MESSAGE_TYPES.TAB_CHANGE,
+      action: 'removed',
+      payload: { tabId, removeInfo },
+    });
   });
 
   chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     debug('onUpdated', tabId, changeInfo);
-    chrome.runtime
-      .sendMessage({
-        type: AGENT_MESSAGE_TYPES.TAB_CHANGE,
-        action: 'updated',
-        payload: { tabId, changeInfo, tab },
-      })
-      .catch((error) => {
-        debug('onUpdated error:', error);
-      });
+    broadcastTabChange({
+      type: AGENT_MESSAGE_TYPES.TAB_CHANGE,
+      action: 'updated',
+      payload: { tabId, changeInfo, tab },
+    });
   });
 }

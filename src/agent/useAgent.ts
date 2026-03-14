@@ -11,6 +11,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { MultiPageAgent } from './MultiPageAgent';
 import { loadAgentConfig, saveAgentConfig, validateAgentConfig } from './config-storage';
 import type { ExtConfig } from './config-storage';
+import { createProviderFetch } from './provider-fetch';
 import { buildAgentTaskWithProfileContext } from './task-context';
 import type { AgentWebsiteProfileContext } from './task-context';
 export type { ExtConfig, LanguagePreference } from './config-storage';
@@ -95,6 +96,7 @@ export function useAgent(options: UseAgentOptions = {}): UseAgentResult {
       const { systemInstruction, ...agentConfig } = config;
       agent = new MultiPageAgent({
         ...agentConfig,
+        customFetch: createProviderFetch(agentConfig),
         instructions: systemInstruction ? { system: systemInstruction } : undefined,
       });
       setError(null);

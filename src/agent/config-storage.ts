@@ -1,7 +1,12 @@
 import type { SupportedLanguage } from '@page-agent/core';
 import type { LLMConfig } from '@page-agent/llms';
 
-import { DEFAULT_CONFIG, migrateLegacyEndpoint } from './constants';
+import {
+  DEFAULT_CONFIG,
+  FORCE_LOCAL_AGENT_CONFIG,
+  migrateLegacyEndpoint,
+  normalizeBaseURLForModel,
+} from './constants';
 
 export type LanguagePreference = SupportedLanguage | undefined;
 
@@ -48,10 +53,23 @@ function withDefaultValue(value: string | undefined, fallback: string): string {
 }
 
 function normalizeStoredConfig(config: Partial<LLMConfig> | null | undefined): LLMConfig {
+  if (FORCE_LOCAL_AGENT_CONFIG) {
+    return {
+      apiKey: DEFAULT_CONFIG.apiKey,
+      baseURL: normalizeBaseURLForModel(DEFAULT_CONFIG.baseURL, DEFAULT_CONFIG.model),
+      model: DEFAULT_CONFIG.model,
+    };
+  }
+
+  const model = withDefaultValue(config?.model, DEFAULT_CONFIG.model);
+
   return {
     apiKey: withDefaultValue(config?.apiKey, DEFAULT_CONFIG.apiKey),
-    baseURL: withDefaultValue(config?.baseURL, DEFAULT_CONFIG.baseURL),
-    model: withDefaultValue(config?.model, DEFAULT_CONFIG.model),
+    baseURL: normalizeBaseURLForModel(
+      withDefaultValue(config?.baseURL, DEFAULT_CONFIG.baseURL),
+      model
+    ),
+    model,
   };
 }
 

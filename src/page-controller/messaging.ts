@@ -137,6 +137,21 @@ export class MessageHandler {
       info: {
         tagName: element.tagName,
         text: element.textContent?.trim() || '',
+        value:
+          element instanceof HTMLInputElement ||
+          element instanceof HTMLTextAreaElement ||
+          element instanceof HTMLSelectElement
+            ? element.value
+            : undefined,
+        checked:
+          element instanceof HTMLInputElement &&
+          (element.type === 'checkbox' || element.type === 'radio')
+            ? element.checked
+            : undefined,
+        selectedText:
+          element instanceof HTMLSelectElement
+            ? element.options[element.selectedIndex]?.textContent?.trim() || ''
+            : undefined,
         visible: rect.width > 0 && rect.height > 0,
         rect: {
           x: rect.x,

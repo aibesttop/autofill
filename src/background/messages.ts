@@ -5,7 +5,7 @@
 import { injectPageController, handleTabControl } from './tabs';
 import { startAuthFlow } from './auth';
 import { fetchWebsites, fetchImageAsDataUrl } from './api';
-import { planAutofillFieldsWithLLM } from './ai-autofill';
+import { planAutofillFieldsWithLLM, planPageAutofillActionsWithLLM } from './ai-autofill';
 import { setupContextMenu, removeContextMenu } from './context-menu';
 import { handleTabControlMessage as handleAgentTabControl } from '../agent/TabsController.background';
 import { handlePageControlMessage as handleAgentPageControl } from '../agent/RemotePageController.background';
@@ -234,6 +234,24 @@ function handleAIAutofillPlan(message: any, sendResponse: (response?: any) => vo
   return true;
 }
 
+function handleAIPageAutofillActions(
+  message: { payload?: Parameters<typeof planPageAutofillActionsWithLLM>[0] },
+  sendResponse: (response?: unknown) => void
+): boolean {
+  planPageAutofillActionsWithLLM(message?.payload)
+    .then((result) => {
+      sendResponse({ success: true, result });
+    })
+    .catch((error: unknown) => {
+      sendResponse({
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+
+  return true;
+}
+
 /**
  * Main message router
  */
@@ -285,6 +303,9 @@ export function setupMessageRouter(): void {
 
         case 'ai:autofill-plan':
           return handleAIAutofillPlan(message, sendResponse);
+
+        case 'ai:page-autofill-actions':
+          return handleAIPageAutofillActions(message, sendResponse);
 
         default:
           console.warn('[Background] Unknown message type:', type);

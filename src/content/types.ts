@@ -114,6 +114,29 @@ export interface LLMFieldMappingResult {
   steps: LLMFieldMappingStep[];
 }
 
+export type PageAutofillActionType = 'input' | 'select' | 'click';
+
+export interface LLMPageAutofillPlanRequest {
+  pageTitle: string;
+  pageUrl: string;
+  profile: AutofillProfileSummary;
+  snapshot: string;
+}
+
+export interface LLMPageAutofillStep {
+  action: PageAutofillActionType;
+  index: number;
+  text?: string;
+  option?: string;
+  label?: string;
+  reasoning?: string;
+}
+
+export interface LLMPageAutofillPlanResult {
+  summary: string;
+  steps: LLMPageAutofillStep[];
+}
+
 export interface AIButtonConfig {
   position: 'top' | 'bottom' | 'left' | 'right';
   offset?: number;

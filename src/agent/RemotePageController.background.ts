@@ -5,6 +5,12 @@
 
 import { AGENT_MESSAGE_TYPES } from './message-types';
 
+const NO_RECEIVER_ERROR = 'Could not establish connection. Receiving end does not exist.';
+
+function isNoReceiverError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes(NO_RECEIVER_ERROR);
+}
+
 export function handlePageControlMessage(
   message: {
     type: typeof AGENT_MESSAGE_TYPES.PAGE_CONTROL;
@@ -40,10 +46,17 @@ export function handlePageControlMessage(
       sendResponse(result);
     })
     .catch((error) => {
-      console.error(PREFIX, error);
+      if (!isNoReceiverError(error)) {
+        console.error(PREFIX, error);
+      }
+
       sendResponse({
         success: false,
-        error: error instanceof Error ? error.message : String(error),
+        error: isNoReceiverError(error)
+          ? 'The page is not ready for agent automation. Refresh the tab and try again.'
+          : error instanceof Error
+            ? error.message
+            : String(error),
       });
     });
 

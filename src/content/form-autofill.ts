@@ -1,6 +1,13 @@
 import { STORAGE_KEYS, LOCAL_TEST_DEFAULT_WEBSITE, LOCAL_TEST_MODE } from './constants';
-import { requestLLMFieldMapping } from './ai-autofill';
+import { requestLLMFieldMapping, requestLLMPageAutofillPlan } from './ai-autofill';
 import { FormFieldDetector } from './form-detector';
+import {
+  clickPageElement,
+  getPageElementInfo,
+  getPageSnapshot,
+  inputPageElement,
+  selectPageElement,
+} from './page-controller';
 import type {
   AutofillFieldSummary,
   AutofillOptionSummary,
@@ -10,6 +17,9 @@ import type {
   LLMFieldMappingRequest,
   LLMFieldMappingResult,
   LLMFieldMappingStep,
+  LLMPageAutofillPlanRequest,
+  LLMPageAutofillPlanResult,
+  LLMPageAutofillStep,
 } from './types';
 
 interface SelectedWebsiteProfile {
@@ -594,7 +604,11 @@ function fillNativeSelectFieldWithTerms(
     }
 
     setSelectValues(field.element, nextValues);
-    return true;
+    const verifiedValues = Array.from(field.element.selectedOptions).map((option) => option.value);
+    return (
+      verifiedValues.length === nextValues.length &&
+      nextValues.every((value) => verifiedValues.includes(value))
+    );
   }
 
   const nextValue = getBestSelectChoiceForTerms(choices, normalizedTerms)?.value || null;
@@ -603,7 +617,7 @@ function fillNativeSelectFieldWithTerms(
   }
 
   setSelectValue(field.element, nextValue);
-  return true;
+  return field.element.value === nextValue;
 }
 
 function fillNativeSelectField(field: FormField, profile: SelectedWebsiteProfile): boolean {
@@ -1145,13 +1159,18 @@ async function fillCustomSelectWithTerms(
     return false;
   }
 
+  const beforeValue = getCurrentCustomSelectText(trigger);
+
   const selectedWithSearch = await findAndSelectChoicesWithSearchTerms(
     trigger,
     normalizedTerms,
     desiredCount
   );
   if (selectedWithSearch > 0) {
-    return true;
+    const afterValue = getCurrentCustomSelectText(trigger);
+    if (afterValue && afterValue !== beforeValue) {
+      return true;
+    }
   }
 
   const selectedWithScroll = await findAndSelectChoicesByScrollingTerms(
@@ -1160,7 +1179,10 @@ async function fillCustomSelectWithTerms(
     desiredCount
   );
   if (selectedWithScroll > 0) {
-    return true;
+    const afterValue = getCurrentCustomSelectText(trigger);
+    if (afterValue && afterValue !== beforeValue) {
+      return true;
+    }
   }
 
   let optionElements = getVisibleCustomOptionElements(trigger);
@@ -1205,7 +1227,12 @@ async function fillCustomSelectWithTerms(
       selectedCount += 1;
     }
 
-    return selectedCount > 0;
+    if (selectedCount <= 0) {
+      return false;
+    }
+
+    const selectedChoices = collectVisibleCustomChoices(trigger).filter((choice) => choice.selected);
+    return selectedChoices.length > 0 || getCurrentCustomSelectText(trigger) !== beforeValue;
   }
 
   const bestChoice = getBestSelectChoiceForTerms(choices, normalizedTerms);
@@ -1219,7 +1246,12 @@ async function fillCustomSelectWithTerms(
   bestChoice.element.scrollIntoView({ block: 'nearest' });
   clickCustomChoice(bestChoice.element);
   await delay(50);
-  return true;
+  const afterValue = getCurrentCustomSelectText(trigger);
+  return (
+    bestChoice.selected ||
+    afterValue === normalizeText(bestChoice.label || bestChoice.value) ||
+    (!!afterValue && afterValue !== beforeValue)
+  );
 }
 
 async function fillCustomSelect(field: FormField, profile: SelectedWebsiteProfile): Promise<boolean> {
@@ -1268,6 +1300,24 @@ function isFieldEmpty(field: FormField): boolean {
   return true;
 }
 
+function getVisibleFieldValue(field: FormField): string {
+  const element = field.element;
+
+  if (element instanceof HTMLSelectElement) {
+    return Array.from(element.selectedOptions)
+      .map((option) => option.textContent || option.label || option.value)
+      .map((value) => normalizeText(value))
+      .filter(Boolean)
+      .join(', ');
+  }
+
+  if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+    return normalizeText(element.value);
+  }
+
+  return getCurrentCustomSelectText(element);
+}
+
 function dispatchFieldEvents(element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement): void {
   element.dispatchEvent(new Event('input', { bubbles: true }));
   element.dispatchEvent(new Event('change', { bubbles: true }));
@@ -1313,6 +1363,21 @@ function getScopeFields(detector: FormFieldDetector, targetField: FormField): Fo
 
 function getFieldDisplayName(field: FormField): string {
   return field.label || field.name || field.placeholder || field.type;
+}
+
+function formatAutofillErrorReason(message: string | null | undefined): string {
+  if (!message) {
+    return 'AI mapping was unavailable';
+  }
+
+  const normalized = message.replace(/\s+/g, ' ').trim();
+  if (!normalized) {
+    return 'AI mapping was unavailable';
+  }
+
+  return normalized.length > 140
+    ? `AI mapping was unavailable (${normalized.slice(0, 137)}...)`
+    : `AI mapping was unavailable (${normalized})`;
 }
 
 function resolveTargetField(
@@ -1394,6 +1459,18 @@ function buildFieldSummary(field: FormField, index: number): AutofillFieldSummar
   };
 }
 
+function buildProfileSummary(profile: SelectedWebsiteProfile) {
+  return {
+    id: profile.id,
+    name: profile.name,
+    url: profile.url,
+    category: profile.category,
+    categories: getProfileCategories(profile),
+    description: buildDescription(profile),
+    tags: getProfileTags(profile),
+  };
+}
+
 function buildLLMFieldMappingRequest(
   profile: SelectedWebsiteProfile,
   scopedFields: FormField[]
@@ -1401,16 +1478,25 @@ function buildLLMFieldMappingRequest(
   return {
     pageTitle: document.title,
     pageUrl: window.location.href,
-    profile: {
-      id: profile.id,
-      name: profile.name,
-      url: profile.url,
-      category: profile.category,
-      categories: getProfileCategories(profile),
-      description: buildDescription(profile),
-      tags: getProfileTags(profile),
-    },
+    profile: buildProfileSummary(profile),
     fields: scopedFields.map((field, index) => buildFieldSummary(field, index)),
+  };
+}
+
+async function buildLLMPageAutofillPlanRequest(
+  profile: SelectedWebsiteProfile
+): Promise<LLMPageAutofillPlanRequest> {
+  const snapshot = await getPageSnapshot();
+
+  if (!snapshot.flatString.trim()) {
+    throw new Error('The page snapshot is empty. Refresh the page and try again.');
+  }
+
+  return {
+    pageTitle: document.title,
+    pageUrl: window.location.href,
+    profile: buildProfileSummary(profile),
+    snapshot: snapshot.flatString,
   };
 }
 
@@ -1428,6 +1514,8 @@ async function applyLLMMappingStep(field: FormField, step: LLMFieldMappingStep):
   if (terms.length === 0) {
     return false;
   }
+
+  const beforeValue = getVisibleFieldValue(field);
 
   if (field.element instanceof HTMLSelectElement) {
     const desiredCount = field.element.multiple ? Math.max(step.values?.length || 0, 1) : 1;
@@ -1453,7 +1541,7 @@ async function applyLLMMappingStep(field: FormField, step: LLMFieldMappingStep):
   }
 
   setTextValue(field.element, nextValue);
-  return true;
+  return getVisibleFieldValue(field) !== beforeValue && getVisibleFieldValue(field) === normalizeText(nextValue);
 }
 
 async function applyLLMMappingPlan(
@@ -1480,6 +1568,86 @@ async function applyLLMMappingPlan(
 
     seenIndexes.add(step.fieldIndex);
     filledFields.push(getFieldDisplayName(field));
+  }
+
+  return {
+    filledFields: unique(filledFields),
+    planSummary: plan.summary,
+  };
+}
+
+function normalizePageElementInfoValue(info: {
+  value?: string;
+  selectedText?: string;
+  text?: string;
+  checked?: boolean;
+}): string {
+  if (typeof info.checked === 'boolean') {
+    return info.checked ? 'checked' : 'unchecked';
+  }
+
+  return normalizeText(info.selectedText || info.value || info.text || '');
+}
+
+function getPlanStepDisplayName(step: LLMPageAutofillStep, fallback?: string): string {
+  return step.label?.trim() || fallback || `Element ${step.index}`;
+}
+
+async function executePageAutofillStep(step: LLMPageAutofillStep): Promise<boolean> {
+  const beforeInfo = await getPageElementInfo(step.index).catch(() => ({}));
+  const beforeValue = normalizePageElementInfoValue(beforeInfo);
+
+  if (step.action === 'input' && step.text) {
+    await inputPageElement(step.index, step.text, true);
+    const afterInfo = await getPageElementInfo(step.index).catch(
+      () => ({}) as Awaited<ReturnType<typeof getPageElementInfo>>
+    );
+    const afterValue = normalizePageElementInfoValue(afterInfo);
+    return afterValue === normalizeText(step.text) && afterValue !== beforeValue;
+  }
+
+  if (step.action === 'select' && step.option) {
+    await selectPageElement(step.index, step.option);
+    const afterInfo = await getPageElementInfo(step.index).catch(
+      () => ({}) as Awaited<ReturnType<typeof getPageElementInfo>>
+    );
+    const afterValue = normalizePageElementInfoValue(afterInfo);
+    return (
+      afterValue === normalizeText(step.option) ||
+      afterValue === normalizeText(afterInfo.value || '') ||
+      afterValue !== beforeValue
+    );
+  }
+
+  if (step.action === 'click') {
+    await clickPageElement(step.index);
+    const afterInfo = await getPageElementInfo(step.index).catch(
+      () => ({}) as Awaited<ReturnType<typeof getPageElementInfo>>
+    );
+    const afterValue = normalizePageElementInfoValue(afterInfo);
+    return afterValue !== beforeValue;
+  }
+
+  return false;
+}
+
+async function applyLLMPageAutofillPlan(plan: LLMPageAutofillPlanResult): Promise<AutofillExecution> {
+  const filledFields: string[] = [];
+
+  for (const step of plan.steps) {
+    try {
+      const didExecute = await executePageAutofillStep(step);
+      if (!didExecute) {
+        continue;
+      }
+
+      const afterInfo = await getPageElementInfo(step.index).catch(
+        () => ({}) as Awaited<ReturnType<typeof getPageElementInfo>>
+      );
+      filledFields.push(getPlanStepDisplayName(step, afterInfo.text));
+    } catch {
+      // Ignore individual step failures and continue with the remaining plan.
+    }
   }
 
   return {
@@ -1516,12 +1684,20 @@ async function runHeuristicAutofill(
     }
 
     if (field.element instanceof HTMLInputElement || field.element instanceof HTMLTextAreaElement) {
+      const beforeValue = getVisibleFieldValue(field);
       const value = resolveTextValue(field, profile);
       if (!value) {
         continue;
       }
 
       setTextValue(field.element, value);
+      if (
+        getVisibleFieldValue(field) === beforeValue ||
+        getVisibleFieldValue(field) !== normalizeText(value)
+      ) {
+        continue;
+      }
+
       filledFields.push(getFieldDisplayName(field));
     }
   }
@@ -1531,10 +1707,23 @@ async function runHeuristicAutofill(
   };
 }
 
+async function tryLLMPageAutofill(
+  profile: SelectedWebsiteProfile
+): Promise<AutofillExecution> {
+  const request = await buildLLMPageAutofillPlanRequest(profile);
+  const plan = await requestLLMPageAutofillPlan(request);
+  return applyLLMPageAutofillPlan(plan);
+}
+
 async function tryLLMAutofill(
   profile: SelectedWebsiteProfile,
   scopedFields: FormField[]
 ): Promise<AutofillExecution> {
+  const pageActionExecution = await tryLLMPageAutofill(profile).catch(() => null);
+  if (pageActionExecution && pageActionExecution.filledFields.length > 0) {
+    return pageActionExecution;
+  }
+
   const request = buildLLMFieldMappingRequest(profile, scopedFields);
   const plan = await requestLLMFieldMapping(request);
   return applyLLMMappingPlan(scopedFields, plan);
@@ -1596,6 +1785,10 @@ export async function autofillFormFromSelectedWebsite(
         ...llmExecution.filledFields,
         ...supplementalHeuristic.filledFields,
       ]);
+      const additionalVerifiedCount = Math.max(
+        mergedFields.length - llmExecution.filledFields.length,
+        0
+      );
 
       return {
         status: 'filled',
@@ -1605,7 +1798,7 @@ export async function autofillFormFromSelectedWebsite(
         skippedCount: Math.max(scopedFields.length - mergedFields.length, 0),
         strategy: 'llm',
         planSummary: llmExecution.planSummary,
-        message: `Filled ${mergedFields.length} fields using AI mapping for ${profile.name}. Heuristic fallback completed ${supplementalHeuristic.filledFields.length} additional field${supplementalHeuristic.filledFields.length === 1 ? '' : 's'}.`,
+        message: `Filled ${mergedFields.length} verified field${mergedFields.length === 1 ? '' : 's'} using AI mapping for ${profile.name}. Heuristic fallback completed ${additionalVerifiedCount} additional verified field${additionalVerifiedCount === 1 ? '' : 's'}.`,
         filledFields: mergedFields,
       };
     }
@@ -1622,7 +1815,7 @@ export async function autofillFormFromSelectedWebsite(
       skippedCount: Math.max(scopedFields.length - filledFields.length, 0),
       strategy: 'llm',
       planSummary: llmExecution.planSummary,
-      message: `Filled ${filledFields.length} field${filledFields.length === 1 ? '' : 's'} using AI mapping for ${profile.name}.`,
+      message: `Filled ${filledFields.length} verified field${filledFields.length === 1 ? '' : 's'} using AI mapping for ${profile.name}.`,
       filledFields,
     };
   }
@@ -1630,7 +1823,7 @@ export async function autofillFormFromSelectedWebsite(
   if (heuristicExecution && heuristicExecution.filledFields.length > 0) {
     const filledFields = heuristicExecution.filledFields;
     const fallbackPrefix = strategy === 'auto' && llmError
-      ? 'AI mapping was unavailable, so '
+      ? `${formatAutofillErrorReason(llmError)}, so `
       : strategy === 'auto'
         ? 'AI mapping did not find usable matches, so '
         : '';
@@ -1642,7 +1835,7 @@ export async function autofillFormFromSelectedWebsite(
       filledCount: filledFields.length,
       skippedCount: Math.max(scopedFields.length - filledFields.length, 0),
       strategy: 'heuristic',
-      message: `${fallbackPrefix}Quick Fill filled ${filledFields.length} field${filledFields.length === 1 ? '' : 's'} using ${profile.name}.`,
+      message: `${fallbackPrefix}Quick Fill filled ${filledFields.length} verified field${filledFields.length === 1 ? '' : 's'} using ${profile.name}.`,
       filledFields,
     };
   }
@@ -1668,7 +1861,7 @@ export async function autofillFormFromSelectedWebsite(
       filledCount: 0,
       skippedCount: scopedFields.length,
       strategy: strategy === 'llm' ? 'llm' : 'heuristic',
-      message: `AI mapping was unavailable and heuristic autofill found no matching empty fields for ${profile.name}.`,
+      message: `${formatAutofillErrorReason(llmError)} and heuristic autofill found no matching empty fields for ${profile.name}.`,
       filledFields: [],
     };
   }
