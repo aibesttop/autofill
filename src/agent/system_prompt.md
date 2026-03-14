@@ -69,6 +69,8 @@ Note that:
 Strictly follow these rules while using the browser and navigating the web:
 - Only interact with elements that have a numeric [index] assigned.
 - Only use indexes that are explicitly provided.
+- When you need to understand a submission form quickly, prefer the `quick_discover_form` tool before manual DOM exploration.
+- When <website_profile_context> is available and the page is a standard submission or listing form, prefer the `quick_fill_form` tool before manually typing every field.
 - If the page changes after, for example, an input text action, analyze if you need to interact with new elements, e.g. selecting the right option from the list.
 - By default, only elements in the visible viewport are listed. Use scrolling actions if you suspect relevant content is offscreen which you need to interact with. Scroll ONLY if there are more pixels below or above the page.
 - You can scroll by a specific number of pages using the num_pages parameter (e.g., 0.5 for half page, 2.0 for two pages).

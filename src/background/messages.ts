@@ -5,6 +5,7 @@
 import { injectPageController, handleTabControl } from './tabs';
 import { startAuthFlow } from './auth';
 import { fetchWebsites, fetchImageAsDataUrl } from './api';
+import { planAutofillFieldsWithLLM } from './ai-autofill';
 import { setupContextMenu, removeContextMenu } from './context-menu';
 import { handleTabControlMessage as handleAgentTabControl } from '../agent/TabsController.background';
 import { handlePageControlMessage as handleAgentPageControl } from '../agent/RemotePageController.background';
@@ -218,6 +219,21 @@ function handleFetchImage(message: any, sendResponse: (response?: any) => void):
   return true; // Async response
 }
 
+function handleAIAutofillPlan(message: any, sendResponse: (response?: any) => void): boolean {
+  planAutofillFieldsWithLLM(message?.payload)
+    .then((result) => {
+      sendResponse({ success: true, result });
+    })
+    .catch((error: unknown) => {
+      sendResponse({
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+
+  return true;
+}
+
 /**
  * Main message router
  */
@@ -266,6 +282,9 @@ export function setupMessageRouter(): void {
 
         case 'fetchImage':
           return handleFetchImage(message, sendResponse);
+
+        case 'ai:autofill-plan':
+          return handleAIAutofillPlan(message, sendResponse);
 
         default:
           console.warn('[Background] Unknown message type:', type);

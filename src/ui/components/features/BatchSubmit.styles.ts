@@ -59,6 +59,7 @@ export const Textarea = styled.textarea`
   outline: none;
   &:focus { border-color: #667eea; box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1); }
 `;
+export const TaskTextarea = styled(Textarea)`min-height: 120px;`;
 export const HelperText = styled.p`margin: 0; font-size: 12px; line-height: 1.5; color: #718096;`;
 export const ErrorText = styled.p`margin: 0; font-size: 12px; line-height: 1.5; color: #e53e3e;`;
 export const ActionRow = styled.div`display: flex; gap: 12px; flex-wrap: wrap;`;
@@ -77,6 +78,7 @@ export const QueueSection = styled.div`display: flex; flex-direction: column; ga
 export const QueueHeader = styled.div`display: flex; align-items: center; justify-content: space-between; gap: 12px;`;
 export const QueueTitle = styled.h3`margin: 0; font-size: 16px; color: #1a202c;`;
 export const QueueMeta = styled.p`margin: 0; font-size: 12px; color: #718096;`;
+export const QueueMessage = styled.p`margin: 8px 0 0 0; font-size: 12px; line-height: 1.5; color: #4a5568;`;
 export const QueueList = styled.div`display: flex; flex-direction: column; gap: 12px;`;
 export const QueueItem = styled.div`
   padding: 14px;

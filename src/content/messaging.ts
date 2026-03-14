@@ -7,7 +7,12 @@ import { getStorageManager } from './storage';
 import { getTwitterDetector } from './twitter';
 import { FormFieldDetector } from './form-detector';
 import { autofillFormFromSelectedWebsite } from './form-autofill';
-import type { AutofillResult, DetectedFormField, FormDetectionResult } from './types';
+import type {
+  AutofillResult,
+  DetectedFormField,
+  FormDetectionResult,
+  FormFillPayload,
+} from './types';
 
 export class ContentMessageHandler {
   async handleMessage(
@@ -32,7 +37,7 @@ export class ContentMessageHandler {
         case 'form:detect':
           return this.handleFormDetect();
         case 'form:fill':
-          return this.handleFormFill();
+          return this.handleFormFill(payload);
         default:
           console.warn('[Content Messaging] Unknown message type:', type);
           return { success: false, error: 'Unknown message type' };
@@ -134,8 +139,10 @@ export class ContentMessageHandler {
     return { success: true, result };
   }
 
-  private async handleFormFill(): Promise<{ success: true; result: AutofillResult }> {
-    const result = await autofillFormFromSelectedWebsite();
+  private async handleFormFill(
+    payload?: FormFillPayload
+  ): Promise<{ success: true; result: AutofillResult }> {
+    const result = await autofillFormFromSelectedWebsite(document.activeElement, payload?.strategy);
     return { success: true, result };
   }
 

@@ -38,7 +38,7 @@ export const QuickFill: React.FC = () => {
         success?: boolean;
         result?: AutofillResult;
         error?: string;
-      }>(tab, { type: 'form:fill' });
+      }>(tab, { type: 'form:fill', payload: { strategy: 'auto' } });
 
       if (!response?.success || !response.result) {
         throw new Error(response?.error || 'No autofill result returned');
@@ -58,7 +58,7 @@ export const QuickFill: React.FC = () => {
     <S.Container>
       <S.Header>
         <S.Title>⚡ Quick Fill</S.Title>
-        <S.Description>Automatically fill forms with AI-powered suggestions</S.Description>
+        <S.Description>Map page fields with AI first, then fall back to built-in autofill rules</S.Description>
       </S.Header>
       <Card>
         <S.Section>

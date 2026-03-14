@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { DEFAULT_BATCH_AGENT_TASK_TEMPLATE } from '../../../agent/batch-runner';
 import { useAutomationWorkspace } from '../../hooks/useAutomationWorkspace';
 import { useWebsites } from '../../hooks/useWebsites';
 import { Button } from '../shared/Button';
@@ -25,17 +26,26 @@ export const BatchSubmit: React.FC = () => {
     isRunningBatch,
     error,
     setDraftUrls,
+    setAgentTaskTemplate,
     selectWebsite,
     queueBatch,
     runBatch,
+    runBatchWithAgent,
     clearBatchQueue,
   } = useAutomationWorkspace();
   const [draftUrls, setLocalDraftUrls] = useState(batchState.draftUrls);
+  const [agentTaskTemplate, setLocalAgentTaskTemplate] = useState(
+    batchState.agentTaskTemplate || DEFAULT_BATCH_AGENT_TASK_TEMPLATE
+  );
   const [feedback, setFeedback] = useState<string | null>(null);
 
   useEffect(() => {
     setLocalDraftUrls(batchState.draftUrls);
   }, [batchState.draftUrls]);
+
+  useEffect(() => {
+    setLocalAgentTaskTemplate(batchState.agentTaskTemplate || DEFAULT_BATCH_AGENT_TASK_TEMPLATE);
+  }, [batchState.agentTaskTemplate]);
 
   const queueCounts = useMemo(() => getQueueCounts(batchState.items), [batchState.items]);
 
@@ -71,6 +81,20 @@ export const BatchSubmit: React.FC = () => {
     }
   };
 
+  const handleRunAgentBatch = async () => {
+    setFeedback(null);
+
+    try {
+      await setAgentTaskTemplate(agentTaskTemplate);
+      await runBatchWithAgent(agentTaskTemplate);
+      setFeedback('AI Agent batch finished. Review the queue and task history for each run.');
+    } catch (nextError) {
+      setFeedback(
+        nextError instanceof Error ? nextError.message : 'Failed to run the AI Agent batch'
+      );
+    }
+  };
+
   const handleClearQueue = async () => {
     setFeedback(null);
     await clearBatchQueue();
@@ -81,7 +105,8 @@ export const BatchSubmit: React.FC = () => {
       <S.Header>
         <S.Title>📋 Batch Submit</S.Title>
         <S.Description>
-          Prepare a queue of target URLs, then launch them into grouped browser tabs for review or automation.
+          Prepare a queue of target URLs, then either launch them into grouped tabs or run an AI
+          Agent workflow on each URL.
         </S.Description>
       </S.Header>
 
@@ -125,6 +150,21 @@ export const BatchSubmit: React.FC = () => {
               <S.HelperText>One URL per line. Only `http` and `https` entries are accepted.</S.HelperText>
             </S.FieldGroup>
 
+            <S.FieldGroup>
+              <S.Label>AI Agent task</S.Label>
+              <S.TaskTextarea
+                value={agentTaskTemplate}
+                onChange={(event) => setLocalAgentTaskTemplate(event.target.value)}
+                onBlur={() => void setAgentTaskTemplate(agentTaskTemplate)}
+                placeholder={DEFAULT_BATCH_AGENT_TASK_TEMPLATE}
+              />
+              <S.HelperText>
+                This instruction is applied to every queued URL. The runner will tell the agent to
+                open the target URL first, then follow this workflow with the selected profile
+                context.
+              </S.HelperText>
+            </S.FieldGroup>
+
             <S.ActionRow>
               <Button
                 variant="secondary"
@@ -137,12 +177,20 @@ export const BatchSubmit: React.FC = () => {
                 Save Queue
               </Button>
               <Button
-                variant="primary"
+                variant="secondary"
                 onClick={handleRunBatch}
                 isLoading={isRunningBatch}
                 disabled={batchState.items.length === 0 || isLoading}
               >
                 Launch Tabs
+              </Button>
+              <Button
+                variant="primary"
+                onClick={handleRunAgentBatch}
+                isLoading={isRunningBatch}
+                disabled={batchState.items.length === 0 || isLoading}
+              >
+                Run AI Batch
               </Button>
               <Button
                 variant="ghost"
@@ -167,7 +215,7 @@ export const BatchSubmit: React.FC = () => {
             </S.SummaryCard>
             <S.SummaryCard>
               <S.SummaryValue>{queueCounts.completed}</S.SummaryValue>
-              <S.SummaryLabel>Opened</S.SummaryLabel>
+              <S.SummaryLabel>Completed</S.SummaryLabel>
             </S.SummaryCard>
             <S.SummaryCard>
               <S.SummaryValue>{queueCounts.failed}</S.SummaryValue>
@@ -195,9 +243,13 @@ export const BatchSubmit: React.FC = () => {
                         <S.StatusBadge status={item.status}>{item.status}</S.StatusBadge>
                       </S.QueueItemTopRow>
                       <S.QueueMeta>
-                        {item.result?.tabId ? `Tab #${item.result.tabId}` : 'Not opened yet'}
-                        {item.result?.groupId ? ` · Group #${item.result.groupId}` : ''}
+                        {item.result?.tabId
+                          ? `Tab #${item.result.tabId}${item.result?.groupId ? ` · Group #${item.result.groupId}` : ''}`
+                          : item.executionMode === 'agent'
+                            ? 'Handled by AI Agent'
+                            : 'Not opened yet'}
                       </S.QueueMeta>
+                      {item.message ? <S.QueueMessage>{item.message}</S.QueueMessage> : null}
                       {item.error ? <S.ErrorText>{item.error}</S.ErrorText> : null}
                     </S.QueueItem>
                   ))}

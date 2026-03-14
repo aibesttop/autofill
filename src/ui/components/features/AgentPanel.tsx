@@ -177,6 +177,17 @@ const EmptyStateDesc = styled.div`
   color: #94a3b8;
 `;
 
+const ErrorBanner = styled.div`
+  margin: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  background: rgba(239, 68, 68, 0.08);
+  color: #b91c1c;
+  font-size: 12px;
+  line-height: 1.5;
+`;
+
 const InputArea = styled.div`
   padding: 12px;
   border-top: 1px solid #e2e8f0;
@@ -918,7 +929,7 @@ export const AgentPanel: React.FC = () => {
       }
     : null;
 
-  const { status, history, activity, currentTask, config, execute, stop, configure } = useAgent({
+  const { status, history, activity, currentTask, config, error, isConfigLoading, execute, stop, configure } = useAgent({
     websiteProfile: websiteProfileContext,
   });
 
@@ -1100,12 +1111,16 @@ export const AgentPanel: React.FC = () => {
         </ContextBar>
       )}
 
+      {error ? <ErrorBanner>{error}</ErrorBanner> : null}
+
       <HistoryArea ref={historyRef}>
         {showEmptyState && (
           <EmptyStateContainer>
             <EmptyStateTitle>AI Agent</EmptyStateTitle>
             <EmptyStateDesc>
-              Describe a task to automate browser actions using AI.
+              {isConfigLoading
+                ? 'Loading AI Agent settings...'
+                : 'Describe a task to automate browser actions using AI.'}
               <br />
               The agent can navigate pages, fill forms, click buttons, and more.
               {selectedWebsiteSnapshot ? (
@@ -1133,7 +1148,7 @@ export const AgentPanel: React.FC = () => {
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
-            disabled={isRunning}
+            disabled={isRunning || isConfigLoading || !!error}
             rows={1}
           />
           {isRunning ? (
@@ -1143,7 +1158,7 @@ export const AgentPanel: React.FC = () => {
           ) : (
             <SendButton
               onClick={() => handleSubmit()}
-              disabled={!inputValue.trim()}
+              disabled={!inputValue.trim() || isConfigLoading || !!error}
               title="Send"
             >
               ▶

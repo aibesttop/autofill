@@ -5,28 +5,15 @@ import type {
   AgentActivity,
   AgentStatus,
   HistoricalEvent,
-  SupportedLanguage,
 } from '@page-agent/core';
-import type { LLMConfig } from '@page-agent/llms';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { MultiPageAgent } from './MultiPageAgent';
-import { DEFAULT_CONFIG, migrateLegacyEndpoint } from './constants';
+import { loadAgentConfig, saveAgentConfig, validateAgentConfig } from './config-storage';
+import type { ExtConfig } from './config-storage';
 import { buildAgentTaskWithProfileContext } from './task-context';
 import type { AgentWebsiteProfileContext } from './task-context';
-
-/** Language preference: undefined means follow system */
-export type LanguagePreference = SupportedLanguage | undefined;
-
-export interface AdvancedConfig {
-  maxSteps?: number;
-  systemInstruction?: string;
-  experimentalLlmsTxt?: boolean;
-}
-
-export interface ExtConfig extends LLMConfig, AdvancedConfig {
-  language?: LanguagePreference;
-}
+export type { ExtConfig, LanguagePreference } from './config-storage';
 
 export interface UseAgentResult {
   status: AgentStatus;
@@ -34,6 +21,8 @@ export interface UseAgentResult {
   activity: AgentActivity | null;
   currentTask: string;
   config: ExtConfig | null;
+  error: string | null;
+  isConfigLoading: boolean;
   execute: (task: string) => Promise<void>;
   stop: () => void;
   configure: (config: ExtConfig) => Promise<void>;
@@ -50,35 +39,73 @@ export function useAgent(options: UseAgentOptions = {}): UseAgentResult {
   const [activity, setActivity] = useState<AgentActivity | null>(null);
   const [currentTask, setCurrentTask] = useState('');
   const [config, setConfig] = useState<ExtConfig | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isConfigLoading, setIsConfigLoading] = useState(true);
   const { websiteProfile = null } = options;
 
   useEffect(() => {
-    chrome.storage.local.get(['llmConfig', 'language', 'advancedConfig']).then((result) => {
-      let llmConfig = (result.llmConfig as LLMConfig) ?? DEFAULT_CONFIG;
-      const language = (result.language as SupportedLanguage) || undefined;
-      const advancedConfig = (result.advancedConfig as AdvancedConfig) ?? {};
+    let isMounted = true;
 
-      // Auto-migrate legacy endpoints
-      const migrated = migrateLegacyEndpoint(llmConfig);
-      if (migrated !== llmConfig) {
-        llmConfig = migrated;
-        chrome.storage.local.set({ llmConfig: migrated });
-      } else if (!result.llmConfig) {
-        chrome.storage.local.set({ llmConfig: DEFAULT_CONFIG });
-      }
+    void loadAgentConfig()
+      .then((storedConfig) => {
+        if (!isMounted) {
+          return;
+        }
 
-      setConfig({ ...llmConfig, ...advancedConfig, language });
-    });
+        const validationError = validateAgentConfig(storedConfig);
+        setConfig(storedConfig);
+        setError(validationError);
+        setStatus(validationError ? 'error' : 'idle');
+      })
+      .catch((loadError) => {
+        if (!isMounted) {
+          return;
+        }
+
+        setError(
+          loadError instanceof Error ? loadError.message : 'Failed to load AI Agent settings.'
+        );
+        setStatus('error');
+      })
+      .finally(() => {
+        if (isMounted) {
+          setIsConfigLoading(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   useEffect(() => {
     if (!config) return;
 
-    const { systemInstruction, ...agentConfig } = config;
-    const agent = new MultiPageAgent({
-      ...agentConfig,
-      instructions: systemInstruction ? { system: systemInstruction } : undefined,
-    });
+    const validationError = validateAgentConfig(config);
+    if (validationError) {
+      setError(validationError);
+      setStatus('error');
+      agentRef.current = null;
+      return;
+    }
+
+    let agent: MultiPageAgent;
+
+    try {
+      const { systemInstruction, ...agentConfig } = config;
+      agent = new MultiPageAgent({
+        ...agentConfig,
+        instructions: systemInstruction ? { system: systemInstruction } : undefined,
+      });
+      setError(null);
+    } catch (initError) {
+      setError(
+        initError instanceof Error ? initError.message : 'Failed to initialize the AI Agent.'
+      );
+      setStatus('error');
+      return;
+    }
+
     agentRef.current = agent;
 
     const handleStatusChange = () => {
@@ -113,34 +140,24 @@ export function useAgent(options: UseAgentOptions = {}): UseAgentResult {
   const execute = useCallback(async (task: string) => {
     const agent = agentRef.current;
     console.log('[useAgent] start executing task:', task);
-    if (!agent) throw new Error('Agent not initialized');
+    if (!agent) {
+      throw new Error(error || 'Agent not initialized');
+    }
 
     setCurrentTask(task);
     setHistory([]);
     await agent.execute(buildAgentTaskWithProfileContext(task, websiteProfile));
-  }, [websiteProfile]);
+  }, [error, websiteProfile]);
 
   const stop = useCallback(() => {
     agentRef.current?.stop();
   }, []);
 
   const configure = useCallback(
-    async ({
-      language,
-      maxSteps,
-      systemInstruction,
-      experimentalLlmsTxt,
-      ...llmConfig
-    }: ExtConfig) => {
-      await chrome.storage.local.set({ llmConfig });
-      if (language) {
-        await chrome.storage.local.set({ language });
-      } else {
-        await chrome.storage.local.remove('language');
-      }
-      const advancedConfig: AdvancedConfig = { maxSteps, systemInstruction, experimentalLlmsTxt };
-      await chrome.storage.local.set({ advancedConfig });
-      setConfig({ ...llmConfig, ...advancedConfig, language });
+    async (nextConfig: ExtConfig) => {
+      await saveAgentConfig(nextConfig);
+      setConfig(nextConfig);
+      setError(validateAgentConfig(nextConfig));
     },
     []
   );
@@ -151,6 +168,8 @@ export function useAgent(options: UseAgentOptions = {}): UseAgentResult {
     activity,
     currentTask,
     config,
+    error,
+    isConfigLoading,
     execute,
     stop,
     configure,

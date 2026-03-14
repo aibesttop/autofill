@@ -1,5 +1,6 @@
 import { type AgentConfig, PageAgentCore } from '@page-agent/core';
 
+import { createFormTools } from './formTools';
 import { RemotePageController } from './RemotePageController';
 import { TabsController } from './TabsController';
 import SYSTEM_PROMPT from './system_prompt.md?raw';
@@ -21,7 +22,10 @@ export class MultiPageAgent extends PageAgentCore {
     // multi page controller
     const tabsController = new TabsController();
     const pageController = new RemotePageController(tabsController);
-    const customTools = createTabTools(tabsController);
+    const customTools = {
+      ...createTabTools(tabsController),
+      ...createFormTools(tabsController),
+    };
 
     // system prompt - auto-detect language if not specified
     const language = config.language ?? detectLanguage();

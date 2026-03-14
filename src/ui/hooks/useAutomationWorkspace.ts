@@ -4,7 +4,11 @@ import type { Website } from '@shared/types';
 import { LOCAL_TEST_DEFAULT_WEBSITE, LOCAL_TEST_MODE } from '@shared/testing/local-test';
 import type { FormDetectionResult } from '@content/types';
 import type { HistoricalEvent } from '@page-agent/core';
-import { clearSessions, deleteSession } from '../../lib/db';
+import {
+  DEFAULT_BATCH_AGENT_TASK_TEMPLATE,
+  executeBatchAgentRun,
+} from '../../agent/batch-runner';
+import { clearSessions, deleteSession, saveSession } from '../../lib/db';
 import type { BatchSubmitItem, Task, TaskMetrics, TaskStatus, TaskStep } from '../types/ui';
 
 export interface WebsiteSnapshot {
@@ -20,6 +24,7 @@ export interface WebsiteSnapshot {
 
 export interface BatchWorkspaceState {
   draftUrls: string;
+  agentTaskTemplate: string;
   items: BatchSubmitItem[];
   activeTaskId: string | null;
   tasks: Task[];
@@ -58,6 +63,7 @@ export interface AgentTaskRecordInput {
 
 const DEFAULT_BATCH_STATE: BatchWorkspaceState = {
   draftUrls: '',
+  agentTaskTemplate: DEFAULT_BATCH_AGENT_TASK_TEMPLATE,
   items: [],
   activeTaskId: null,
   tasks: [],
@@ -161,6 +167,11 @@ function sanitizeBatchItem(value: unknown): BatchSubmitItem | null {
     url: value.url,
     websiteId: typeof value.websiteId === 'string' ? value.websiteId : undefined,
     status: (value.status as BatchSubmitItem['status']) || 'pending',
+    executionMode:
+      value.executionMode === 'launch' || value.executionMode === 'agent'
+        ? value.executionMode
+        : undefined,
+    message: typeof value.message === 'string' ? value.message : undefined,
     error: typeof value.error === 'string' ? value.error : undefined,
     result,
     createdAt: typeof value.createdAt === 'number' ? value.createdAt : undefined,
@@ -195,6 +206,10 @@ function normalizeBatchState(value: unknown): BatchWorkspaceState {
 
   return {
     draftUrls: typeof value.draftUrls === 'string' ? value.draftUrls : '',
+    agentTaskTemplate:
+      typeof value.agentTaskTemplate === 'string'
+        ? value.agentTaskTemplate
+        : DEFAULT_BATCH_AGENT_TASK_TEMPLATE,
     items: Array.isArray(value.items)
       ? value.items.map(sanitizeBatchItem).filter((item): item is BatchSubmitItem => item !== null)
       : [],
@@ -244,6 +259,11 @@ function buildBatchMetrics(items: BatchSubmitItem[]): TaskMetrics {
 function buildBatchSummary(items: BatchSubmitItem[]): string {
   const metrics = buildBatchMetrics(items);
   return `${metrics.completed || 0}/${metrics.total || 0} URLs launched${metrics.failed ? `, ${metrics.failed} failed` : ''}`;
+}
+
+function buildAgentBatchSummary(items: BatchSubmitItem[]): string {
+  const metrics = buildBatchMetrics(items);
+  return `${metrics.completed || 0}/${metrics.total || 0} URLs processed by AI Agent${metrics.failed ? `, ${metrics.failed} failed` : ''}`;
 }
 
 function upsertTask(tasks: Task[], task: Task): Task[] {
@@ -642,6 +662,13 @@ export function useAutomationWorkspace() {
     });
   };
 
+  const setAgentTaskTemplate = async (agentTaskTemplate: string) => {
+    await saveBatchState({
+      ...state.batchState,
+      agentTaskTemplate,
+    });
+  };
+
   const selectWebsite = async (website: Website | WebsiteSnapshot | null) => {
     const snapshot = website ? (isWebsiteSnapshot(website) ? website : toWebsiteSnapshot(website)) : null;
 
@@ -754,6 +781,9 @@ export function useAutomationWorkspace() {
         workingState.items[index] = {
           ...currentItem,
           status: 'running',
+          executionMode: 'launch',
+          message: 'Opening browser tab...',
+          error: undefined,
           updatedAt: Date.now(),
         };
 
@@ -781,6 +811,8 @@ export function useAutomationWorkspace() {
           workingState.items[index] = {
             ...workingState.items[index],
             status: 'completed',
+            executionMode: 'launch',
+            message: `Opened in tab #${response.tabId}`,
             result: {
               tabId: response.tabId,
               windowId: response.windowId,
@@ -796,6 +828,8 @@ export function useAutomationWorkspace() {
           workingState.items[index] = {
             ...workingState.items[index],
             status: 'failed',
+            executionMode: 'launch',
+            message: 'Failed to open tab',
             error: error instanceof Error ? error.message : 'Failed to open tab',
             updatedAt: Date.now(),
           };
@@ -880,6 +914,172 @@ export function useAutomationWorkspace() {
     }
   };
 
+  const runBatchWithAgent = async (taskTemplateInput?: string) => {
+    if (state.batchState.items.length === 0) {
+      const errorMessage = 'Queue a batch before starting AI Agent runs.';
+      setState((prev) => ({ ...prev, error: errorMessage }));
+      throw new Error(errorMessage);
+    }
+
+    const taskTemplate = (taskTemplateInput ?? state.batchState.agentTaskTemplate).trim();
+    const effectiveTaskTemplate = taskTemplate || DEFAULT_BATCH_AGENT_TASK_TEMPLATE;
+
+    setState((prev) => ({ ...prev, isRunningBatch: true, error: null }));
+
+    const activeTaskId = state.batchState.activeTaskId;
+    const workingState: BatchWorkspaceState = {
+      ...state.batchState,
+      agentTaskTemplate: effectiveTaskTemplate,
+      items: state.batchState.items.map((item) => ({ ...item })),
+      tasks: [...state.batchState.tasks],
+    };
+
+    if (activeTaskId) {
+      workingState.tasks = updateTaskList(workingState.tasks, activeTaskId, (task) => ({
+        ...task,
+        status: 'running',
+        summary: `Running AI Agent across ${workingState.items.length} queued URLs`,
+        steps: [
+          ...task.steps,
+          createTaskStep(
+            'Running AI Agent batch',
+            'running',
+            `Starting AI Agent on ${workingState.items.length} queued URLs`
+          ),
+        ],
+      }));
+      await saveBatchState(workingState);
+    }
+
+    try {
+      for (let index = 0; index < workingState.items.length; index += 1) {
+        const currentItem = workingState.items[index];
+
+        workingState.items[index] = {
+          ...currentItem,
+          status: 'running',
+          executionMode: 'agent',
+          message: 'AI Agent is processing this URL...',
+          error: undefined,
+          updatedAt: Date.now(),
+        };
+
+        if (activeTaskId) {
+          workingState.tasks = updateTaskList(workingState.tasks, activeTaskId, (task) => ({
+            ...task,
+            metrics: buildBatchMetrics(workingState.items),
+            summary: buildAgentBatchSummary(workingState.items),
+          }));
+        }
+
+        await saveBatchState(workingState);
+
+        try {
+          const execution = await executeBatchAgentRun({
+            targetUrl: currentItem.url,
+            taskTemplate: effectiveTaskTemplate,
+            websiteProfile: state.selectedWebsiteSnapshot,
+          });
+
+          let agentTask: Task;
+
+          try {
+            const savedSession = await saveSession({
+              task: execution.task,
+              history: execution.history,
+              status: execution.status,
+            });
+
+            agentTask = await recordAgentTask({
+              sessionId: savedSession.id,
+              task: execution.task,
+              history: execution.history,
+              status: execution.status,
+              websiteId: state.selectedWebsiteSnapshot?.id,
+              websiteName: state.selectedWebsiteSnapshot?.name,
+              url: currentItem.url,
+              createdAt: savedSession.createdAt,
+              completedAt: savedSession.createdAt,
+            });
+          } catch {
+            agentTask = await recordAgentTask({
+              task: execution.task,
+              history: execution.history,
+              status: execution.status,
+              websiteId: state.selectedWebsiteSnapshot?.id,
+              websiteName: state.selectedWebsiteSnapshot?.name,
+              url: currentItem.url,
+            });
+          }
+
+          workingState.tasks = upsertTask(workingState.tasks, agentTask);
+          const itemMessage = truncateText(
+            execution.resultText || (execution.status === 'completed' ? 'Agent run completed.' : 'Agent run failed.'),
+            180
+          );
+
+          workingState.items[index] = {
+            ...workingState.items[index],
+            status: execution.status === 'completed' ? 'completed' : 'failed',
+            executionMode: 'agent',
+            message: itemMessage,
+            error: execution.status === 'error' ? itemMessage : undefined,
+            updatedAt: Date.now(),
+          };
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'AI Agent run failed';
+          workingState.items[index] = {
+            ...workingState.items[index],
+            status: 'failed',
+            executionMode: 'agent',
+            message: 'AI Agent run failed',
+            error: message,
+            updatedAt: Date.now(),
+          };
+        }
+
+        if (activeTaskId) {
+          workingState.tasks = updateTaskList(workingState.tasks, activeTaskId, (task) => ({
+            ...task,
+            metrics: buildBatchMetrics(workingState.items),
+            summary: buildAgentBatchSummary(workingState.items),
+          }));
+        }
+
+        await saveBatchState(workingState);
+      }
+
+      const metrics = buildBatchMetrics(workingState.items);
+      const failedCount = metrics.failed || 0;
+      const finalStatus: TaskStatus = failedCount > 0 ? 'error' : 'completed';
+      const finalSummary = buildAgentBatchSummary(workingState.items);
+
+      if (activeTaskId) {
+        workingState.tasks = updateTaskList(workingState.tasks, activeTaskId, (task) => ({
+          ...task,
+          status: finalStatus,
+          summary: finalSummary,
+          metrics,
+          error: failedCount > 0 ? `${failedCount} AI Agent runs failed` : undefined,
+          completedAt: Date.now(),
+          steps: [
+            ...task.steps,
+            createTaskStep(
+              failedCount > 0 ? 'AI batch completed with errors' : 'AI batch completed',
+              failedCount > 0 ? 'error' : 'completed',
+              finalSummary
+            ),
+          ],
+        }));
+      }
+
+      workingState.lastRunAt = Date.now();
+      await saveBatchState(workingState);
+    } finally {
+      setState((prev) => ({ ...prev, isRunningBatch: false }));
+    }
+  };
+
   const clearBatchQueue = async () => {
     await saveBatchState({
       ...state.batchState,
@@ -920,9 +1120,11 @@ export function useAutomationWorkspace() {
     error: state.error,
     refresh,
     setDraftUrls,
+    setAgentTaskTemplate,
     selectWebsite,
     queueBatch,
     runBatch,
+    runBatchWithAgent,
     clearBatchQueue,
     clearTaskHistory,
     removeTask,

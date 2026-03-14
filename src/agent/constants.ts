@@ -1,9 +1,9 @@
 import type { LLMConfig } from '@page-agent/llms';
 
 // Default LLM configuration
-export const DEFAULT_MODEL = 'gpt-4o';
-export const DEFAULT_BASE_URL = 'https://api.openai.com/v1';
-export const DEFAULT_API_KEY = '';
+export const DEFAULT_MODEL = import.meta.env.VITE_AGENT_MODEL || 'gpt-4o';
+export const DEFAULT_BASE_URL = import.meta.env.VITE_AGENT_BASE_URL || 'https://api.openai.com/v1';
+export const DEFAULT_API_KEY = import.meta.env.VITE_AGENT_API_KEY || '';
 
 export const DEFAULT_CONFIG: LLMConfig = {
   apiKey: DEFAULT_API_KEY,

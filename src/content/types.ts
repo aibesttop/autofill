@@ -12,6 +12,12 @@ export type ContentMessageType =
   | 'form:detect'
   | 'form:fill';
 
+export type AutofillStrategy = 'auto' | 'llm' | 'heuristic';
+
+export interface FormFillPayload {
+  strategy?: AutofillStrategy;
+}
+
 export interface PluginState {
   enabled: boolean;
   autoDetect: boolean;
@@ -54,6 +60,58 @@ export interface AutofillResult {
   skippedCount: number;
   message: string;
   filledFields: string[];
+  strategy?: 'llm' | 'heuristic';
+  planSummary?: string;
+}
+
+export interface AutofillOptionSummary {
+  value: string;
+  label: string;
+}
+
+export interface AutofillFieldSummary {
+  index: number;
+  type: string;
+  name: string;
+  label?: string;
+  placeholder?: string;
+  autocompleteType?: string;
+  tagName?: string;
+  role?: string;
+  isEmpty: boolean;
+  isRequired?: boolean;
+  currentValue?: string;
+  allowsMultiple?: boolean;
+  options?: AutofillOptionSummary[];
+}
+
+export interface AutofillProfileSummary {
+  id: string;
+  name: string;
+  url: string;
+  category?: string;
+  categories?: string[];
+  description?: string;
+  tags?: string[];
+}
+
+export interface LLMFieldMappingRequest {
+  pageTitle: string;
+  pageUrl: string;
+  profile: AutofillProfileSummary;
+  fields: AutofillFieldSummary[];
+}
+
+export interface LLMFieldMappingStep {
+  fieldIndex: number;
+  value?: string;
+  values?: string[];
+  reasoning?: string;
+}
+
+export interface LLMFieldMappingResult {
+  summary: string;
+  steps: LLMFieldMappingStep[];
 }
 
 export interface AIButtonConfig {

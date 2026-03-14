@@ -50,6 +50,8 @@ export interface BatchSubmitItem {
   url: string;
   websiteId?: string;
   status: 'pending' | 'running' | 'completed' | 'failed';
+  executionMode?: 'launch' | 'agent';
+  message?: string;
   error?: string;
   result?: BatchSubmitResult;
   createdAt?: number;
