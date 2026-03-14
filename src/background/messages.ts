@@ -238,6 +238,14 @@ function handleAIPageAutofillActions(
   message: { payload?: Parameters<typeof planPageAutofillActionsWithLLM>[0] },
   sendResponse: (response?: unknown) => void
 ): boolean {
+  if (!message?.payload) {
+    sendResponse({
+      success: false,
+      error: 'Missing AI page autofill payload.',
+    });
+    return false;
+  }
+
   planPageAutofillActionsWithLLM(message?.payload)
     .then((result) => {
       sendResponse({ success: true, result });

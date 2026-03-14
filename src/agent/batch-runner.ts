@@ -2,6 +2,7 @@ import type { AgentErrorEvent, HistoricalEvent } from '@page-agent/core';
 
 import { loadAgentConfig } from './config-storage';
 import { MultiPageAgent } from './MultiPageAgent';
+import { createProviderFetch } from './provider-fetch';
 import { buildAgentTaskWithProfileContext } from './task-context';
 import type { AgentWebsiteProfileContext } from './task-context';
 
@@ -51,6 +52,7 @@ export async function executeBatchAgentRun({
   const task = `Batch agent · ${targetUrl}`;
   const agent = new MultiPageAgent({
     ...agentConfig,
+    customFetch: createProviderFetch(agentConfig),
     instructions: systemInstruction ? { system: systemInstruction } : undefined,
   });
 

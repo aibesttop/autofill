@@ -6,7 +6,17 @@ interface ProviderConfig {
 
 interface OpenAIRequestMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
-  content?: string | null;
+  content?:
+    | string
+    | null
+    | Array<
+        | string
+        | {
+            type?: string;
+            text?: string;
+            [key: string]: unknown;
+          }
+      >;
   name?: string;
   tool_call_id?: string;
 }
@@ -42,9 +52,10 @@ interface ReplicatePredictionResponse {
   };
 }
 
-interface ReplicateToolSelection {
-  toolName: string;
-  arguments: Record<string, unknown>;
+interface NormalizedReplicateResult {
+  toolName: string | null;
+  argumentsPayload: Record<string, unknown> | null;
+  contentPayload: Record<string, unknown> | null;
 }
 
 function isReplicateBaseURL(baseURL: string): boolean {
@@ -76,9 +87,38 @@ function serializeMessages(messages: OpenAIRequestMessage[]): string {
       const detail = [message.name ? `name=${message.name}` : null, message.tool_call_id ? `tool_call_id=${message.tool_call_id}` : null]
         .filter(Boolean)
         .join(', ');
-      return `${header}${detail ? ` (${detail})` : ''}\n${message.content || ''}`;
+      return `${header}${detail ? ` (${detail})` : ''}\n${stringifyMessageContent(message.content)}`;
     })
     .join('\n\n');
+}
+
+function stringifyMessageContent(content: OpenAIRequestMessage['content']): string {
+  if (typeof content === 'string') {
+    return content;
+  }
+
+  if (!Array.isArray(content)) {
+    return '';
+  }
+
+  return content
+    .map((part) => {
+      if (typeof part === 'string') {
+        return part;
+      }
+
+      if (typeof part?.text === 'string') {
+        return part.text;
+      }
+
+      try {
+        return JSON.stringify(part);
+      } catch {
+        return '';
+      }
+    })
+    .filter(Boolean)
+    .join('\n');
 }
 
 function serializeTools(tools: OpenAIToolDefinition[]): string {
@@ -161,11 +201,115 @@ function extractReplicateOutput(response: ReplicatePredictionResponse): string {
   return '';
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function getToolNames(tools: OpenAIToolDefinition[] | undefined): Set<string> {
+  return new Set((tools || []).map((tool) => tool.function.name));
+}
+
+function isAgentOutputPayload(value: Record<string, unknown>): boolean {
+  return (
+    'action' in value ||
+    'evaluation_previous_goal' in value ||
+    'memory' in value ||
+    'next_goal' in value ||
+    'thinking' in value
+  );
+}
+
+function normalizeReplicateResult(
+  rawText: string,
+  tools: OpenAIToolDefinition[] | undefined
+): NormalizedReplicateResult {
+  const parsed = JSON.parse(extractJSONObject(rawText)) as unknown;
+  const toolNames = getToolNames(tools);
+
+  if (!isPlainObject(parsed)) {
+    throw new Error('Replicate adapter expected a JSON object.');
+  }
+
+  if (
+    parsed.type === 'function' &&
+    isPlainObject(parsed.function) &&
+    typeof parsed.function.name === 'string'
+  ) {
+    const fnArguments = parsed.function.arguments;
+    return {
+      toolName: parsed.function.name,
+      argumentsPayload: isPlainObject(fnArguments)
+        ? fnArguments
+        : typeof fnArguments === 'string'
+          ? (JSON.parse(fnArguments) as Record<string, unknown>)
+          : {},
+      contentPayload: parsed,
+    };
+  }
+
+  if (typeof parsed.name === 'string' && 'arguments' in parsed) {
+    const namedArguments = parsed.arguments;
+    return {
+      toolName: parsed.name,
+      argumentsPayload: isPlainObject(namedArguments)
+        ? namedArguments
+        : typeof namedArguments === 'string'
+          ? (JSON.parse(namedArguments) as Record<string, unknown>)
+          : {},
+      contentPayload: parsed,
+    };
+  }
+
+  if (typeof parsed.toolName === 'string') {
+    const { toolName, arguments: explicitArguments, ...rest } = parsed;
+    const normalizedArguments = isPlainObject(explicitArguments)
+      ? explicitArguments
+      : Object.keys(rest).length > 0
+        ? rest
+        : {};
+
+    return {
+      toolName,
+      argumentsPayload: normalizedArguments,
+      contentPayload: parsed,
+    };
+  }
+
+  if (isAgentOutputPayload(parsed)) {
+    return {
+      toolName: 'AgentOutput',
+      argumentsPayload: parsed,
+      contentPayload: parsed,
+    };
+  }
+
+  const topLevelKeys = Object.keys(parsed);
+  if (topLevelKeys.length === 1 && toolNames.has(topLevelKeys[0]!)) {
+    return {
+      toolName: 'AgentOutput',
+      argumentsPayload: { action: parsed },
+      contentPayload: parsed,
+    };
+  }
+
+  return {
+    toolName: null,
+    argumentsPayload: null,
+    contentPayload: parsed,
+  };
+}
+
 function buildOpenAIStyleResponse(
   config: ProviderConfig,
-  selection: ReplicateToolSelection,
+  selection: NormalizedReplicateResult,
   usage?: ReplicatePredictionResponse['metrics']
 ): Response {
+  const normalizedContent = selection.contentPayload
+    ? JSON.stringify(selection.contentPayload)
+    : null;
+  const hasToolCall =
+    Boolean(selection.toolName) && Boolean(selection.argumentsPayload);
+
   return new Response(
     JSON.stringify({
       id: `chatcmpl-replicate-${Date.now()}`,
@@ -175,20 +319,22 @@ function buildOpenAIStyleResponse(
       choices: [
         {
           index: 0,
-          finish_reason: 'tool_calls',
+          finish_reason: hasToolCall ? 'tool_calls' : 'stop',
           message: {
             role: 'assistant',
-            content: null,
-            tool_calls: [
-              {
-                id: `call_replicate_${Date.now()}`,
-                type: 'function',
-                function: {
-                  name: selection.toolName,
-                  arguments: JSON.stringify(selection.arguments),
-                },
-              },
-            ],
+            content: normalizedContent,
+            tool_calls: hasToolCall
+              ? [
+                  {
+                    id: `call_replicate_${Date.now()}`,
+                    type: 'function',
+                    function: {
+                      name: selection.toolName,
+                      arguments: JSON.stringify(selection.argumentsPayload),
+                    },
+                  },
+                ]
+              : [],
           },
         },
       ],
@@ -254,7 +400,7 @@ export function createProviderFetch(config: ProviderConfig): typeof fetch | unde
         );
       }
 
-      const selection = JSON.parse(extractJSONObject(extractReplicateOutput(parsed))) as ReplicateToolSelection;
+      const selection = normalizeReplicateResult(extractReplicateOutput(parsed), body.tools);
       return buildOpenAIStyleResponse(config, selection, parsed.metrics);
     } catch (error) {
       return new Response(

@@ -54,6 +54,8 @@ export interface AgentTaskRecordInput {
   task: string;
   history: HistoricalEvent[];
   status: Extract<TaskStatus, 'completed' | 'error'>;
+  taskType?: Extract<Task['type'], 'quick_fill' | 'ai_agent'>;
+  title?: string;
   websiteId?: string;
   websiteName?: string;
   url?: string;
@@ -519,10 +521,16 @@ export async function recordAgentTask(input: AgentTaskRecordInput): Promise<Task
   const createdAt = input.createdAt ?? Date.now();
   const steps = buildAgentTaskSteps(input.history, createdAt);
   const metrics = buildAgentTaskMetrics(steps);
+  const taskType = input.taskType ?? 'ai_agent';
+  const taskTitle =
+    input.title ??
+    (taskType === 'quick_fill'
+      ? `Quick Fill Agent · ${truncateText(input.task, 72)}`
+      : `AI Agent · ${truncateText(input.task, 72)}`);
   const task: Task = {
     id: input.sessionId ? `ai-agent-${input.sessionId}` : createId('task'),
-    type: 'ai_agent',
-    title: `AI Agent · ${truncateText(input.task, 72)}`,
+    type: taskType,
+    title: taskTitle,
     status: input.status,
     url: input.url,
     summary: getAgentSummary(input.history, input.task),

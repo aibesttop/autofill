@@ -26,8 +26,8 @@ export const TaskManager: React.FC = () => {
         <div>
           <S.Title>📝 Task Manager</S.Title>
           <S.Description>
-            Review Quick Discover analyses, batch execution results, and AI Agent runs stored on
-            this device.
+            Review Quick Discover analyses, Quick Fill agent runs, batch execution results, and AI
+            Agent runs stored on this device.
           </S.Description>
         </div>
         <Button
@@ -63,8 +63,8 @@ export const TaskManager: React.FC = () => {
       {batchState.tasks.length === 0 ? (
         <Card>
           <S.EmptyState>
-            No tasks recorded yet. Quick Discover analyses, batch launches, and AI Agent runs will
-            appear here.
+            No tasks recorded yet. Quick Discover analyses, Quick Fill agent runs, batch launches,
+            and AI Agent runs will appear here.
           </S.EmptyState>
         </Card>
       ) : (
