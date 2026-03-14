@@ -1,15 +1,28 @@
+import { type PageAgentCore, tool } from '@page-agent/core';
 import * as z from 'zod/v4';
 
-import type { AutofillResult, DetectedFormField, FormDetectionResult } from '@content/types';
+import type {
+  AutofillResult,
+  DetectedFormField,
+  FormDetectionResult,
+  OrderedAutofillResult,
+  FormSetFieldValueResult,
+  FormSelectOptionsResult,
+} from '@content/types';
 import { canUseTabMessaging, sendMessageToTabId } from '@shared/utils/tab-messaging';
 
 import type { TabsController } from './TabsController';
+import { formatOrderedFormSequence, inferOrderedFieldPurpose } from './form-field-plan';
 
 interface FormTool {
   description: string;
   inputSchema: z.ZodType;
   execute: (input: unknown) => Promise<string>;
 }
+
+type ObservationCapableAgent = PageAgentCore & {
+  pushObservation?: (content: string) => void;
+};
 
 interface ToolTabContext {
   tabId: number;
@@ -27,44 +40,22 @@ type FormMessageResponse =
       success?: boolean;
       result?: AutofillResult;
       error?: string;
+    }
+  | {
+      success?: boolean;
+      result?: FormSelectOptionsResult;
+      error?: string;
+    }
+  | {
+      success?: boolean;
+      result?: FormSetFieldValueResult;
+      error?: string;
+    }
+  | {
+      success?: boolean;
+      result?: OrderedAutofillResult;
+      error?: string;
     };
-
-function getFieldDescriptor(field: DetectedFormField): string {
-  return [field.label, field.name, field.placeholder, field.autocompleteType, field.type]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase();
-}
-
-function inferFieldPurpose(field: DetectedFormField): string | null {
-  const descriptor = getFieldDescriptor(field);
-
-  if (/categor|industr|niche|sector|type|platform/.test(descriptor)) {
-    return 'category';
-  }
-
-  if (/tag|keyword|topic/.test(descriptor)) {
-    return 'tags';
-  }
-
-  if (/website|homepage|domain|url|link/.test(descriptor)) {
-    return 'url';
-  }
-
-  if (/name|title|company|business|project|brand/.test(descriptor)) {
-    return 'name';
-  }
-
-  if (/description|about|summary|bio|details|message|overview/.test(descriptor)) {
-    return 'description';
-  }
-
-  if (/email/.test(descriptor)) {
-    return 'email';
-  }
-
-  return null;
-}
 
 function formatFieldLine(field: DetectedFormField, index: number): string {
   const details = [
@@ -82,8 +73,8 @@ function formatFieldLine(field: DetectedFormField, index: number): string {
 
 function formatLikelyTargets(fields: DetectedFormField[]): string | null {
   const counts = fields.reduce<Record<string, number>>((result, field) => {
-    const purpose = inferFieldPurpose(field);
-    if (!purpose) {
+    const purpose = inferOrderedFieldPurpose(field);
+    if (purpose === 'other') {
       return result;
     }
 
@@ -105,12 +96,15 @@ function formatDetectionSummary(tab: ToolTabContext, result: FormDetectionResult
       ? result.fields.slice(0, 12).map(formatFieldLine).join('\n')
       : 'No visible fields detected.';
   const likelyTargets = formatLikelyTargets(result.fields);
+  const orderedSequence = formatOrderedFormSequence(result.fields).slice(0, 12);
 
   return [
     `Quick Discover succeeded on ${tab.url}.`,
     `Page: ${result.pageTitle || tab.title || 'Untitled page'}`,
     `Detected ${result.fieldCount} fields across ${result.formCount} forms with ${result.submitButtonCount} submit controls.`,
     likelyTargets ? `Likely field targets: ${likelyTargets}.` : null,
+    orderedSequence.length > 0 ? 'Suggested ordered fill sequence:' : null,
+    ...(orderedSequence.length > 0 ? orderedSequence : []),
     'Detected fields:',
     fieldsPreview,
   ]
@@ -136,6 +130,62 @@ function formatAutofillSummary(tab: ToolTabContext, result: AutofillResult): str
     .join('\n');
 }
 
+function formatSelectOptionsSummary(tab: ToolTabContext, result: FormSelectOptionsResult): string {
+  return [
+    `Dynamic option selection executed on ${tab.url}.`,
+    `Status: ${result.status}.`,
+    result.matchedField ? `Matched field: ${result.matchedField}.` : null,
+    result.selectedValues.length > 0 ? `Selected values: ${result.selectedValues.join(', ')}.` : null,
+    result.message,
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+function formatSetFieldValueSummary(tab: ToolTabContext, result: FormSetFieldValueResult): string {
+  return [
+    `Text field update executed on ${tab.url}.`,
+    `Status: ${result.status}.`,
+    result.matchedField ? `Matched field: ${result.matchedField}.` : null,
+    result.currentValue ? `Current value: ${result.currentValue}.` : null,
+    result.message,
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+function pushAgentObservation(agent: PageAgentCore, content: string): void {
+  (agent as ObservationCapableAgent).pushObservation?.(content);
+}
+
+function formatOrderedAutofillSummary(tab: ToolTabContext, result: OrderedAutofillResult): string {
+  return [
+    `Ordered Quick Fill executed on ${tab.url}.`,
+    `Status: ${result.status}.`,
+    result.planSummary ? `Plan: ${result.planSummary}.` : null,
+    result.message,
+    `Completed ${result.completedCount} of ${result.totalCount} planned steps.`,
+    result.filledFields.length > 0 ? `Verified fields: ${result.filledFields.join(', ')}.` : null,
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+function formatOrderedStepObservation(
+  step: OrderedAutofillResult['steps'][number]
+): string {
+  const lines = [
+    `[ordered-fill] Step ${step.order} · ${step.fieldName} [${step.fieldType}]`,
+    `Status: ${step.status}`,
+    step.requestedValues.length > 0 ? `Requested: ${step.requestedValues.join(', ')}` : null,
+    step.finalValue ? `Final value: ${step.finalValue}` : null,
+    step.message,
+    ...step.diagnostics.map((entry) => `- ${entry}`),
+  ];
+
+  return lines.filter(Boolean).join('\n');
+}
+
 async function getCurrentTabContext(tabsController: TabsController): Promise<ToolTabContext> {
   const tabId = tabsController.currentTabId;
   if (!tabId) {
@@ -152,7 +202,12 @@ async function getCurrentTabContext(tabsController: TabsController): Promise<Too
 
 async function sendFormMessage<TResponse extends FormMessageResponse>(
   tabsController: TabsController,
-  type: 'form:detect' | 'form:fill',
+  type:
+    | 'form:detect'
+    | 'form:fill'
+    | 'form:ordered-fill'
+    | 'form:select-options'
+    | 'form:set-field-value',
   payload?: Record<string, unknown>
 ): Promise<{ tab: ToolTabContext; response: TResponse }> {
   const tab = await getCurrentTabContext(tabsController);
@@ -190,9 +245,36 @@ export function createFormTools(tabsController: TabsController): Record<string, 
       },
     },
 
+    ordered_quick_fill_form: tool({
+      description:
+        'Run a deterministic ordered autofill pass on the current page: scan visible fields, ask the LLM for field values, then fill fields one by one in page order. Stop immediately on the first field that cannot be confirmed, and emit per-field runtime diagnostics.',
+      inputSchema: z.object({}),
+      execute: async function (this: PageAgentCore) {
+        try {
+          const { tab, response } = await sendFormMessage<{
+            success?: boolean;
+            result?: OrderedAutofillResult;
+            error?: string;
+          }>(tabsController, 'form:ordered-fill');
+
+          if (!response.success || !response.result) {
+            throw new Error(response.error || 'No ordered autofill result returned.');
+          }
+
+          for (const step of response.result.steps) {
+            pushAgentObservation(this, formatOrderedStepObservation(step));
+          }
+
+          return formatOrderedAutofillSummary(tab, response.result);
+        } catch (error) {
+          return `Failed to run ordered Quick Fill: ${error instanceof Error ? error.message : String(error)}`;
+        }
+      },
+    }) as unknown as FormTool,
+
     quick_fill_form: {
       description:
-        'Autofill the current page using the extension\'s built-in form filler and the selected website profile context. Prefer this on standard directory or submission forms before manually clicking and typing field by field.',
+        'Autofill the current page using the extension\'s built-in LLM-first form filler and the selected website profile context. Prefer this as an initial stable pass on standard directory or submission forms before manually targeting the remaining fields.',
       inputSchema: z.object({}),
       execute: async () => {
         try {
@@ -200,7 +282,7 @@ export function createFormTools(tabsController: TabsController): Record<string, 
             success?: boolean;
             result?: AutofillResult;
             error?: string;
-          }>(tabsController, 'form:fill', { strategy: 'auto' });
+          }>(tabsController, 'form:fill', { strategy: 'llm' });
 
           if (!response.success || !response.result) {
             throw new Error(response.error || 'No autofill result returned.');
@@ -209,6 +291,74 @@ export function createFormTools(tabsController: TabsController): Record<string, 
           return formatAutofillSummary(tab, response.result);
         } catch (error) {
           return `Failed to run Quick Fill: ${error instanceof Error ? error.message : String(error)}`;
+        }
+      },
+    },
+
+    set_form_field_value: {
+      description:
+        'Set a text, URL, email, or textarea field by matching a visible field label or hint. This tool is idempotent: if the field already contains the requested value, it returns unchanged so the agent can move on instead of retyping the same text.',
+      inputSchema: z.object({
+        fieldHint: z.string().min(1),
+        value: z.string().min(1),
+      }),
+      execute: async (input) => {
+        try {
+          const parsed = z
+            .object({
+              fieldHint: z.string().min(1),
+              value: z.string().min(1),
+            })
+            .parse(input);
+
+          const { tab, response } = await sendFormMessage<{
+            success?: boolean;
+            result?: FormSetFieldValueResult;
+            error?: string;
+          }>(tabsController, 'form:set-field-value', parsed);
+
+          if (!response.success || !response.result) {
+            throw new Error(response.error || 'No set-field-value result returned.');
+          }
+
+          return formatSetFieldValueSummary(tab, response.result);
+        } catch (error) {
+          return `Failed to update text field: ${error instanceof Error ? error.message : String(error)}`;
+        }
+      },
+    },
+
+    select_form_field_options: {
+      description:
+        'Select one or more options in a dynamic select, combobox, category picker, checkbox list, or tag picker by matching a visible field label or hint. Use this when low-level clicks are unreliable after a dropdown opens.',
+      inputSchema: z.object({
+        fieldHint: z.string().min(1),
+        values: z.array(z.string().min(1)).min(1),
+        allowMultiple: z.boolean().optional(),
+      }),
+      execute: async (input) => {
+        try {
+          const parsed = z
+            .object({
+              fieldHint: z.string().min(1),
+              values: z.array(z.string().min(1)).min(1),
+              allowMultiple: z.boolean().optional(),
+            })
+            .parse(input);
+
+          const { tab, response } = await sendFormMessage<{
+            success?: boolean;
+            result?: FormSelectOptionsResult;
+            error?: string;
+          }>(tabsController, 'form:select-options', parsed);
+
+          if (!response.success || !response.result) {
+            throw new Error(response.error || 'No select-options result returned.');
+          }
+
+          return formatSelectOptionsSummary(tab, response.result);
+        } catch (error) {
+          return `Failed to select dynamic form options: ${error instanceof Error ? error.message : String(error)}`;
         }
       },
     },

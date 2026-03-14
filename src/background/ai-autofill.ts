@@ -364,6 +364,8 @@ function buildFieldMappingPrompt(request: LLMFieldMappingRequest): string {
     'Return exactly one JSON object with this shape:',
     '{"summary":"short text","steps":[{"fieldIndex":0,"value":"..."}]}',
     'Rules:',
+    '- Treat the fields as an ordered fill sequence. Return steps in ascending fieldIndex order.',
+    '- Keep the sequence stable and deterministic. Do not jump ahead to a later field while an earlier planned field is unresolved.',
     '- Use only the provided field indexes.',
     '- Only include safe, high-confidence mappings.',
     '- Do not invent email, phone, password, login, payment, captcha, or verification values.',

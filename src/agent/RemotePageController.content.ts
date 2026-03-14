@@ -26,6 +26,33 @@ export function initPageController() {
     return pageController;
   }
 
+  function getIndexedElementInfo(index: number) {
+    const pc = getPC() as unknown as {
+      selectorMap?: Map<number, { ref?: Element | null }>;
+      elementTextMap?: Map<number, string>;
+    };
+    const element = pc.selectorMap?.get(index)?.ref;
+
+    if (!(element instanceof HTMLElement)) {
+      throw new Error(`Element ${index} not found`);
+    }
+
+    return {
+      tagName: element.tagName.toLowerCase(),
+      text:
+        pc.elementTextMap?.get(index) ||
+        element.textContent?.trim() ||
+        element.getAttribute('aria-label') ||
+        '',
+      value:
+        element instanceof HTMLInputElement ||
+        element instanceof HTMLTextAreaElement ||
+        element instanceof HTMLSelectElement
+          ? element.value
+          : undefined,
+    };
+  }
+
   // Poll for agent state to manage mask visibility
   window.setInterval(async () => {
     const agentHeartbeat = (await chrome.storage.local.get('agentHeartbeat')).agentHeartbeat;
@@ -86,6 +113,17 @@ export function initPageController() {
               error: error instanceof Error ? error.message : String(error),
             })
           );
+        break;
+
+      case 'get_element_info':
+        try {
+          sendResponse(getIndexedElementInfo(payload?.[0]));
+        } catch (error) {
+          sendResponse({
+            success: false,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
         break;
 
       default:

@@ -2,13 +2,14 @@ import type { AgentActivity, AgentStatus, HistoricalEvent } from '@page-agent/co
 import { useEffect, useRef, useState } from 'react';
 import { buildQuickFillAgentTask, type AgentWebsiteProfileContext } from '../../../agent/task-context';
 import { useAgent } from '../../../agent/useAgent';
+import type { FormDetectionResult } from '../../../content/types';
 import { saveSession } from '../../../lib/db';
 import { Card } from '../shared/Card';
 import { Button } from '../shared/Button';
 import { useExtensionSettings } from '../../hooks/useExtensionSettings';
 import { useActiveTab } from '../../hooks/useActiveTab';
 import { recordAgentTask, useAutomationWorkspace } from '../../hooks/useAutomationWorkspace';
-import { canUseTabMessaging } from '../../utils/tab-messaging';
+import { canUseTabMessaging, sendMessageToTab } from '../../utils/tab-messaging';
 import * as S from './QuickFill.styles';
 
 const STATUS_COPY: Record<AgentStatus, string> = {
@@ -74,25 +75,25 @@ function getHistoryEventText(event: HistoricalEvent): string {
   if (event.type === 'step') {
     if (event.action?.name === 'done') {
       const doneInput = event.action.input as { text?: string } | undefined;
-      return truncateText(doneInput?.text || event.action.output || 'Agent run completed.', 200);
+      return truncateText(doneInput?.text || event.action.output || 'Agent run completed.', 360);
     }
 
     const actionOutput =
       typeof event.action?.output === 'string' && event.action.output.trim().length > 0
         ? event.action.output
         : `Executed ${event.action?.name || 'agent step'}.`;
-    return truncateText(actionOutput, 200);
+    return truncateText(actionOutput, 360);
   }
 
   if (event.type === 'observation') {
-    return truncateText(event.content, 200);
+    return truncateText(event.content, 360);
   }
 
   if (event.type === 'retry') {
-    return truncateText(event.message, 200);
+    return truncateText(event.message, 360);
   }
 
-  return truncateText('message' in event ? event.message : 'Agent execution requires manual takeover.', 200);
+  return truncateText('message' in event ? event.message : 'Agent execution requires manual takeover.', 360);
 }
 
 function getActivityText(activity: AgentActivity | null): string | null {
@@ -250,10 +251,27 @@ export const QuickFill: React.FC = () => {
     setFillFeedback(null);
 
     try {
+      let detectedFields: FormDetectionResult['fields'] | undefined;
+
+      try {
+        const detectionResponse = await sendMessageToTab<{
+          success?: boolean;
+          result?: FormDetectionResult;
+          error?: string;
+        }>(tab, { type: 'form:detect' });
+
+        if (detectionResponse.success && detectionResponse.result) {
+          detectedFields = detectionResponse.result.fields;
+        }
+      } catch {
+        detectedFields = undefined;
+      }
+
       await execute(
         buildQuickFillAgentTask({
           url: tab.url,
           title: tab.title,
+          detectedFields,
         })
       );
     } catch (nextError) {
@@ -265,7 +283,7 @@ export const QuickFill: React.FC = () => {
     }
   };
 
-  const recentEvents = history.slice(-5);
+  const recentEvents = history.slice(-12);
   const activityText = getActivityText(activity);
 
   return (

@@ -92,6 +92,8 @@ export class FloatingButtonManager {
     button.textContent = 'Fill';
     button.setAttribute('aria-label', 'Open autofill panel');
     button.title = 'Open autofill panel';
+    button.setAttribute('data-page-agent-not-interactive', 'true');
+    button.setAttribute('data-autofill-extension-ui', 'floating-button');
     Object.assign(button.style, {
       position: 'fixed',
       top: '0',

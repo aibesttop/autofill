@@ -29,6 +29,8 @@ export const FORM_SELECTORS = {
   CUSTOM_SELECT_SELECTORS: [
     '[role="combobox"]',
     '[aria-haspopup="listbox"]',
+    '[aria-haspopup="dialog"]',
+    '[aria-expanded][aria-controls]',
   ],
   IGNORE_SELECTORS: '[aria-hidden="true"]',
 } as const;

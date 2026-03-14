@@ -142,6 +142,19 @@ export class RemotePageController {
     return this.remoteCallDomAction('execute_javascript', args);
   }
 
+  async getElementInfo(index: number): Promise<IndexedElementInfo | null> {
+    if (!this.currentTabId || !isContentScriptAllowed(await this.getCurrentUrl())) {
+      return null;
+    }
+
+    return sendMessage({
+      type: AGENT_MESSAGE_TYPES.PAGE_CONTROL,
+      action: 'get_element_info',
+      targetTabId: this.currentTabId,
+      payload: [index],
+    });
+  }
+
   /** Managed by content script via storage polling. */
   async showMask(): Promise<void> {}
   /** Managed by content script via storage polling. */
@@ -174,6 +187,12 @@ export class RemotePageController {
 interface DomActionReturn {
   success: boolean;
   message: string;
+}
+
+interface IndexedElementInfo {
+  tagName?: string;
+  text?: string;
+  value?: string;
 }
 
 /**

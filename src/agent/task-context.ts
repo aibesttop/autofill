@@ -1,3 +1,7 @@
+import type { DetectedFormField } from '@content/types';
+
+import { formatOrderedFormSequence } from './form-field-plan';
+
 export interface AgentWebsiteProfileContext {
   id: string;
   name: string;
@@ -19,23 +23,33 @@ function formatList(values: string[] | undefined): string | null {
 export function buildQuickFillAgentTask(input?: {
   url?: string | null;
   title?: string | null;
+  detectedFields?: DetectedFormField[];
 }): string {
+  const orderedFieldSequence = input?.detectedFields
+    ? formatOrderedFormSequence(input.detectedFields)
+    : [];
   const lines = [
     'You are running Quick Fill in full agent mode on the current tab.',
     '<quick_fill_agent_rules>',
     input?.url ? `- Current page URL: ${input.url}` : null,
     input?.title ? `- Current page title: ${input.title}` : null,
     '- Stay on the current tab. Do not open, switch to, or group other tabs unless the user explicitly asks for that.',
-    '- Start by observing the current page state before acting.',
-    '- Prefer an iterative observe -> act -> observe loop. Re-check the page after every interaction that changes the UI.',
-    '- You may use quick_discover_form for a fast structural scan.',
-    '- You may use quick_fill_form as a first pass on standard fields, but you must immediately inspect the page again and continue handling any dynamic UI that remains.',
-    '- Handle dynamic controls as a core requirement: dropdowns, comboboxes, autocomplete popovers, searchable category pickers, checkbox lists, token/tag inputs, modals, and multi-step form sections.',
-    '- For categories and tags, type into picker search inputs when available, scroll option lists when needed, and select matching items one by one.',
-    '- Continue until there are no obvious required or high-value fields left to fill, or you hit a concrete blocker that you can explain.',
+    '- Start by calling ordered_quick_fill_form exactly once.',
+    '- ordered_quick_fill_form must perform the entire sequence: scan the page, generate field content, and fill fields one by one in page order.',
+    '- Do not call quick_fill_form before ordered_quick_fill_form. Do not start manual clicks or low-level typing before ordered_quick_fill_form returns.',
+    '- If ordered_quick_fill_form reports a blocker, stop immediately and summarize that blocker instead of improvising more interactions.',
+    '- Follow the ordered fill sequence below in page order. Work on one numbered field at a time.',
+    '- Do not jump ahead to a later numbered field while an earlier numbered field is still unresolved unless you have a concrete blocker you can explain.',
+    '- After a field is updated, unchanged, or selected, treat it as complete and move to the next numbered field.',
+    '- Do not reopen or revisit a completed numbered field unless the page visibly reset it or validation clearly shows it is still missing.',
+    '- Preserve existing non-empty text values. Do not clear or overwrite text fields that already contain content unless the user explicitly asks for replacement.',
+    '- Continue only while each numbered field is confirmed complete. If one field is not confirmed, do not move on to the next field.',
     '- Do not submit the final form unless the user explicitly instructs you to do so.',
     '- Finish with a concise summary of what you filled, what still needs manual work, and any blockers.',
     '</quick_fill_agent_rules>',
+    orderedFieldSequence.length > 0 ? '<ordered_fill_sequence>' : null,
+    ...orderedFieldSequence,
+    orderedFieldSequence.length > 0 ? '</ordered_fill_sequence>' : null,
   ];
 
   return lines.filter(Boolean).join('\n');

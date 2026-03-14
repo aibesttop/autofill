@@ -11,9 +11,15 @@ import {
 import type {
   AutofillFieldSummary,
   AutofillOptionSummary,
+  OrderedAutofillResult,
+  OrderedAutofillStepResult,
   AutofillResult,
   AutofillStrategy,
   FormField,
+  FormSetFieldValuePayload,
+  FormSetFieldValueResult,
+  FormSelectOptionsPayload,
+  FormSelectOptionsResult,
   LLMFieldMappingRequest,
   LLMFieldMappingResult,
   LLMFieldMappingStep,
@@ -35,6 +41,13 @@ interface SelectedWebsiteProfile {
 interface AutofillExecution {
   filledFields: string[];
   planSummary?: string;
+}
+
+interface OrderedAutofillExecution {
+  filledFields: string[];
+  planSummary?: string;
+  steps: OrderedAutofillStepResult[];
+  blockedStep?: OrderedAutofillStepResult;
 }
 
 const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
@@ -134,6 +147,28 @@ function unique<T>(values: T[]): T[] {
   return Array.from(new Set(values));
 }
 
+function pushDiagnostic(diagnostics: string[] | undefined, message: string): void {
+  if (!diagnostics) {
+    return;
+  }
+
+  const normalized = message.replace(/\s+/g, ' ').trim();
+  if (normalized) {
+    diagnostics.push(normalized);
+  }
+}
+
+function summarizeChoicesForDiagnostics(choices: SelectChoice[], limit = 8): string {
+  if (choices.length === 0) {
+    return 'none';
+  }
+
+  return choices
+    .slice(0, limit)
+    .map((choice) => `${choice.selected ? '[x]' : '[ ]'} ${choice.label || choice.value}`)
+    .join(' | ');
+}
+
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => {
     window.setTimeout(resolve, ms);
@@ -212,6 +247,79 @@ function tokenize(value: string | undefined): string[] {
     .split(/[^a-z0-9]+/i)
     .map((token) => token.trim())
     .filter((token) => token.length > 1);
+}
+
+function getFieldHintScore(field: FormField, hint: string): number {
+  const normalizedHint = normalizeText(hint);
+  if (!normalizedHint) {
+    return 0;
+  }
+
+  const descriptor = getFieldDescriptor(field);
+  const label = normalizeText(field.label);
+  const name = normalizeText(field.name);
+  const placeholder = normalizeText(field.placeholder);
+  const hintTokens = tokenize(normalizedHint);
+  const descriptorTokens = tokenize(descriptor);
+  const overlappingTokenCount = hintTokens.filter((token) => descriptorTokens.includes(token)).length;
+  const allHintTokensMatch =
+    hintTokens.length > 0 && hintTokens.every((token) => descriptorTokens.includes(token));
+
+  let score = 0;
+
+  if (field.type === 'select') {
+    score += 3;
+  }
+
+  if (label === normalizedHint) {
+    score += 12;
+  } else if (label.includes(normalizedHint)) {
+    score += 9;
+  }
+
+  if (name === normalizedHint) {
+    score += 8;
+  } else if (name.includes(normalizedHint)) {
+    score += 6;
+  }
+
+  if (placeholder && placeholder.includes(normalizedHint)) {
+    score += 4;
+  }
+
+  if (descriptor === normalizedHint) {
+    score += 10;
+  } else if (descriptor.includes(normalizedHint) || normalizedHint.includes(descriptor)) {
+    score += 7;
+  }
+
+  if (allHintTokensMatch) {
+    score += 6;
+  }
+
+  score += overlappingTokenCount * 2;
+
+  return score;
+}
+
+function findBestFieldByHint(fields: FormField[], hint: string): FormField | null {
+  const normalizedHint = normalizeText(hint);
+  if (!normalizedHint) {
+    return null;
+  }
+
+  let bestField: FormField | null = null;
+  let bestScore = 0;
+
+  for (const field of fields) {
+    const score = getFieldHintScore(field, normalizedHint);
+    if (score > bestScore) {
+      bestField = field;
+      bestScore = score;
+    }
+  }
+
+  return bestScore >= 6 ? bestField : null;
 }
 
 function getCategoryTerms(category: string | undefined): string[] {
@@ -572,7 +680,8 @@ function setSelectValues(element: HTMLSelectElement, values: string[]): void {
 function fillNativeSelectFieldWithTerms(
   field: FormField,
   terms: string[],
-  desiredCount = 1
+  desiredCount = 1,
+  diagnostics?: string[]
 ): boolean {
   if (!(field.element instanceof HTMLSelectElement)) {
     return false;
@@ -580,6 +689,7 @@ function fillNativeSelectFieldWithTerms(
 
   const normalizedTerms = normalizeCandidateTerms(terms);
   if (normalizedTerms.length === 0) {
+    pushDiagnostic(diagnostics, 'No normalized candidate terms were available for the native select.');
     return false;
   }
 
@@ -589,34 +699,49 @@ function fillNativeSelectFieldWithTerms(
       value: option.value,
       label: option.textContent || option.label || option.value,
     }));
+  pushDiagnostic(diagnostics, `Requested select terms: ${normalizedTerms.join(', ')}`);
+  pushDiagnostic(diagnostics, `Visible native options: ${summarizeChoicesForDiagnostics(choices)}`);
 
   if (field.element.multiple || desiredCount > 1) {
     const bestChoices = getBestSelectChoicesForTerms(choices, normalizedTerms, desiredCount);
     const nextValues = bestChoices.map((choice) => choice.value);
     const currentValues = Array.from(field.element.selectedOptions).map((option) => option.value);
+    pushDiagnostic(
+      diagnostics,
+      `Best native multi-select matches: ${bestChoices.map((choice) => choice.label || choice.value).join(', ') || 'none'}`
+    );
 
     if (
       nextValues.length === 0 ||
       (nextValues.length === currentValues.length &&
         nextValues.every((value) => currentValues.includes(value)))
     ) {
+      pushDiagnostic(diagnostics, 'Native multi-select did not produce a new selection.');
       return false;
     }
 
     setSelectValues(field.element, nextValues);
     const verifiedValues = Array.from(field.element.selectedOptions).map((option) => option.value);
+    pushDiagnostic(diagnostics, `Verified native selected values: ${verifiedValues.join(', ') || 'none'}`);
     return (
       verifiedValues.length === nextValues.length &&
       nextValues.every((value) => verifiedValues.includes(value))
     );
   }
 
-  const nextValue = getBestSelectChoiceForTerms(choices, normalizedTerms)?.value || null;
+  const bestChoice = getBestSelectChoiceForTerms(choices, normalizedTerms);
+  const nextValue = bestChoice?.value || null;
+  pushDiagnostic(
+    diagnostics,
+    `Best native match: ${bestChoice ? bestChoice.label || bestChoice.value : 'none'}`
+  );
   if (!nextValue || !canOverwriteSelectValue(field.element, nextValue)) {
+    pushDiagnostic(diagnostics, 'Native select could not be safely overwritten.');
     return false;
   }
 
   setSelectValue(field.element, nextValue);
+  pushDiagnostic(diagnostics, `Native select value after update: ${field.element.value || 'empty'}`);
   return field.element.value === nextValue;
 }
 
@@ -681,6 +806,59 @@ function getCurrentCustomSelectText(element: HTMLElement): string {
       element.textContent ||
       ''
   );
+}
+
+function resolveCustomSelectTrigger(element: HTMLElement): HTMLElement {
+  if (isSearchLikeElement(element)) {
+    return element;
+  }
+
+  const role = element.getAttribute('role')?.toLowerCase();
+  const ariaHasPopup = element.getAttribute('aria-haspopup')?.toLowerCase();
+  if (
+    role === 'combobox' ||
+    ariaHasPopup === 'listbox' ||
+    ariaHasPopup === 'dialog' ||
+    (element.hasAttribute('aria-expanded') && element.hasAttribute('aria-controls')) ||
+    element.tagName === 'BUTTON'
+  ) {
+    return element;
+  }
+
+  const candidates = Array.from(
+    element.querySelectorAll<HTMLElement>(
+      [
+        '[role="combobox"]',
+        'button',
+        '[aria-haspopup="listbox"]',
+        '[aria-haspopup="dialog"]',
+        '[aria-expanded][aria-controls]',
+        '[tabindex]:not([tabindex="-1"])',
+      ].join(', ')
+    )
+  ).filter((candidate) => isVisibleElement(candidate) && !isCustomOptionCandidate(candidate));
+
+  if (candidates.length === 0) {
+    return element;
+  }
+
+  return candidates.sort((left, right) => {
+    const score = (candidate: HTMLElement) => {
+      const candidateRole = candidate.getAttribute('role')?.toLowerCase();
+      const candidatePopup = candidate.getAttribute('aria-haspopup')?.toLowerCase();
+
+      let value = 0;
+      if (candidateRole === 'combobox') value += 8;
+      if (candidate.tagName === 'BUTTON') value += 6;
+      if (candidatePopup === 'listbox' || candidatePopup === 'dialog') value += 5;
+      if (candidate.hasAttribute('aria-expanded') && candidate.hasAttribute('aria-controls')) value += 4;
+      if (candidate.hasAttribute('aria-label') || candidate.hasAttribute('aria-labelledby')) value += 2;
+
+      return value;
+    };
+
+    return score(right) - score(left);
+  })[0];
 }
 
 function canOverwriteCustomSelectValueWithTerms(
@@ -934,6 +1112,60 @@ function getPopupContainers(element: HTMLElement): HTMLElement[] {
   return getNearbyPopupContainers(element);
 }
 
+function getSelectedCustomChoiceLabels(trigger: HTMLElement): string[] {
+  return unique(
+    collectVisibleCustomChoices(trigger)
+      .filter((choice) => choice.selected)
+      .map((choice) => choice.label || choice.value)
+      .map((value) => value.trim())
+      .filter(Boolean)
+  );
+}
+
+async function closeCustomSelect(trigger: HTMLElement): Promise<void> {
+  const popupContainers = getPopupContainers(trigger);
+  if (popupContainers.length === 0) {
+    return;
+  }
+
+  const closeButton = popupContainers
+    .flatMap((container) =>
+      Array.from(
+        container.querySelectorAll<HTMLElement>('button, [role="button"], [aria-label]')
+      )
+    )
+    .find((candidate) => {
+      const text = normalizeText(
+        candidate.textContent || candidate.getAttribute('aria-label') || candidate.getAttribute('title') || ''
+      );
+      return text === 'close' || text.includes('close');
+    });
+
+  if (closeButton) {
+    dispatchMouseSequence(closeButton);
+    closeButton.click();
+    await delay(80);
+    return;
+  }
+
+  const activeElement = document.activeElement;
+  if (activeElement instanceof HTMLElement) {
+    activeElement.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    );
+    activeElement.dispatchEvent(
+      new KeyboardEvent('keyup', { key: 'Escape', bubbles: true, cancelable: true })
+    );
+    await delay(80);
+  }
+
+  if (getPopupContainers(trigger).length > 0 && trigger.getAttribute('aria-expanded') === 'true') {
+    dispatchMouseSequence(trigger);
+    trigger.click();
+    await delay(80);
+  }
+}
+
 function getSearchInput(container: HTMLElement): HTMLInputElement | HTMLTextAreaElement | null {
   const candidate = container.querySelector<HTMLInputElement | HTMLTextAreaElement>(
     [
@@ -956,6 +1188,8 @@ function setTextControlValue(
   element: HTMLInputElement | HTMLTextAreaElement,
   value: string
 ): void {
+  element.focus();
+
   if (element instanceof HTMLTextAreaElement) {
     nativeTextAreaValueSetter?.call(element, value);
   } else {
@@ -966,7 +1200,13 @@ function setTextControlValue(
     element.value = value;
   }
 
-  element.dispatchEvent(new Event('input', { bubbles: true }));
+  element.dispatchEvent(
+    new InputEvent('input', {
+      bubbles: true,
+      inputType: 'insertText',
+      data: value,
+    })
+  );
   element.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
@@ -1017,7 +1257,8 @@ async function openCustomSelect(element: HTMLElement): Promise<void> {
 async function findAndSelectChoicesWithSearchTerms(
   trigger: HTMLElement,
   terms: string[],
-  desiredCount: number
+  desiredCount: number,
+  diagnostics?: string[]
 ): Promise<number> {
   const preferredTerms = normalizeCandidateTerms(terms);
   if (preferredTerms.length === 0 || desiredCount <= 0) {
@@ -1040,38 +1281,49 @@ async function findAndSelectChoicesWithSearchTerms(
 
     const searchInput = popupContainers.map(getSearchInput).find(Boolean) || null;
     if (!searchInput) {
+      pushDiagnostic(diagnostics, 'No search input was found inside the open custom picker.');
       break;
     }
 
     searchInput.focus();
     setTextControlValue(searchInput, term);
+    pushDiagnostic(diagnostics, `Typed search term: ${term}`);
     await delay(140);
 
     const choices = collectVisibleCustomChoices(trigger);
+    pushDiagnostic(diagnostics, `Visible custom options after "${term}": ${summarizeChoicesForDiagnostics(choices)}`);
 
     const bestChoice = getBestChoiceForSearchTerm(
       choices.filter((choice) => !selectedChoiceKeys.has(getChoiceKey(choice))),
       term
     );
     if (!bestChoice?.element) {
+      pushDiagnostic(diagnostics, `No matching visible option was found for "${term}".`);
       continue;
     }
 
     const choiceKey = getChoiceKey(bestChoice);
     if (selectedChoiceKeys.has(choiceKey)) {
+      pushDiagnostic(diagnostics, `Skipped already-attempted option: ${bestChoice.label || bestChoice.value}`);
       continue;
     }
 
     if (bestChoice.selected) {
+      pushDiagnostic(diagnostics, `Option already selected: ${bestChoice.label || bestChoice.value}`);
       selectedChoiceKeys.add(choiceKey);
       selectedCount += 1;
       continue;
     }
 
+    pushDiagnostic(diagnostics, `Clicking matched option: ${bestChoice.label || bestChoice.value}`);
     clickCustomChoice(bestChoice.element);
     selectedChoiceKeys.add(choiceKey);
     selectedCount += 1;
     await delay(100);
+    pushDiagnostic(
+      diagnostics,
+      `Selected values after click: ${getSelectedCustomChoiceLabels(trigger).join(', ') || 'none'}`
+    );
   }
 
   const popupContainers = getPopupContainers(trigger);
@@ -1079,6 +1331,7 @@ async function findAndSelectChoicesWithSearchTerms(
   if (searchInput) {
     setTextControlValue(searchInput, '');
     await delay(60);
+    pushDiagnostic(diagnostics, 'Cleared the picker search input.');
   }
 
   return selectedCount;
@@ -1087,7 +1340,8 @@ async function findAndSelectChoicesWithSearchTerms(
 async function findAndSelectChoicesByScrollingTerms(
   trigger: HTMLElement,
   terms: string[],
-  desiredCount: number
+  desiredCount: number,
+  diagnostics?: string[]
 ): Promise<number> {
   const preferredTerms = normalizeCandidateTerms(terms);
   if (preferredTerms.length === 0 || desiredCount <= 0) {
@@ -1111,12 +1365,22 @@ async function findAndSelectChoicesByScrollingTerms(
     const scrollContainers = getScrollablePopupContainers(trigger);
     scrollContainers.forEach(resetScrollPosition);
     if (scrollContainers.length > 0) {
+      pushDiagnostic(diagnostics, `Scanning scrollable picker containers for term "${term}".`);
       await delay(80);
     }
 
     for (let attempt = 0; attempt < 10; attempt += 1) {
+      const visibleChoices = collectVisibleCustomChoices(trigger).filter(
+        (choice) => !selectedChoiceKeys.has(getChoiceKey(choice))
+      );
+      if (attempt === 0 || visibleChoices.length > 0) {
+        pushDiagnostic(
+          diagnostics,
+          `Visible custom options while scrolling for "${term}": ${summarizeChoicesForDiagnostics(visibleChoices)}`
+        );
+      }
       const bestChoice = getBestChoiceForSearchTerm(
-        collectVisibleCustomChoices(trigger).filter((choice) => !selectedChoiceKeys.has(getChoiceKey(choice))),
+        visibleChoices,
         term
       );
       if (bestChoice?.element) {
@@ -1127,17 +1391,23 @@ async function findAndSelectChoicesByScrollingTerms(
 
         if (!bestChoice.selected) {
           bestChoice.element.scrollIntoView({ block: 'nearest' });
+          pushDiagnostic(diagnostics, `Clicking scrolled match: ${bestChoice.label || bestChoice.value}`);
           clickCustomChoice(bestChoice.element);
           await delay(100);
         }
 
         selectedChoiceKeys.add(choiceKey);
         selectedCount += 1;
+        pushDiagnostic(
+          diagnostics,
+          `Selected values after scrolled click: ${getSelectedCustomChoiceLabels(trigger).join(', ') || 'none'}`
+        );
         break;
       }
 
       const didScroll = scrollContainers.map(scrollPopupContainerStep).some(Boolean);
       if (!didScroll) {
+        pushDiagnostic(diagnostics, `Reached the end of the scrollable picker while searching for "${term}".`);
         break;
       }
 
@@ -1151,24 +1421,37 @@ async function findAndSelectChoicesByScrollingTerms(
 async function fillCustomSelectWithTerms(
   field: FormField,
   terms: string[],
-  desiredCount = 1
+  desiredCount = 1,
+  diagnostics?: string[]
 ): Promise<boolean> {
-  const trigger = field.element instanceof HTMLElement ? field.element : null;
+  const trigger =
+    field.element instanceof HTMLElement ? resolveCustomSelectTrigger(field.element) : null;
   const normalizedTerms = normalizeCandidateTerms(terms);
   if (!trigger || normalizedTerms.length === 0 || desiredCount <= 0) {
+    pushDiagnostic(diagnostics, 'Custom select trigger or candidate terms were unavailable.');
     return false;
   }
 
   const beforeValue = getCurrentCustomSelectText(trigger);
+  pushDiagnostic(diagnostics, `Requested custom select terms: ${normalizedTerms.join(', ')}`);
+  pushDiagnostic(diagnostics, `Current trigger text before selection: ${beforeValue || 'empty'}`);
 
   const selectedWithSearch = await findAndSelectChoicesWithSearchTerms(
     trigger,
     normalizedTerms,
-    desiredCount
+    desiredCount,
+    diagnostics
   );
   if (selectedWithSearch > 0) {
     const afterValue = getCurrentCustomSelectText(trigger);
-    if (afterValue && afterValue !== beforeValue) {
+    const selectedChoices = collectVisibleCustomChoices(trigger).filter((choice) => choice.selected);
+    pushDiagnostic(
+      diagnostics,
+      `Visible selected custom options after search: ${summarizeChoicesForDiagnostics(selectedChoices)}`
+    );
+    if (selectedChoices.length > 0 || (afterValue && afterValue !== beforeValue)) {
+      await closeCustomSelect(trigger);
+      pushDiagnostic(diagnostics, 'Closed the custom picker after a successful search selection.');
       return true;
     }
   }
@@ -1176,11 +1459,19 @@ async function fillCustomSelectWithTerms(
   const selectedWithScroll = await findAndSelectChoicesByScrollingTerms(
     trigger,
     normalizedTerms,
-    desiredCount
+    desiredCount,
+    diagnostics
   );
   if (selectedWithScroll > 0) {
     const afterValue = getCurrentCustomSelectText(trigger);
-    if (afterValue && afterValue !== beforeValue) {
+    const selectedChoices = collectVisibleCustomChoices(trigger).filter((choice) => choice.selected);
+    pushDiagnostic(
+      diagnostics,
+      `Visible selected custom options after scroll search: ${summarizeChoicesForDiagnostics(selectedChoices)}`
+    );
+    if (selectedChoices.length > 0 || (afterValue && afterValue !== beforeValue)) {
+      await closeCustomSelect(trigger);
+      pushDiagnostic(diagnostics, 'Closed the custom picker after a successful scroll selection.');
       return true;
     }
   }
@@ -1198,14 +1489,17 @@ async function fillCustomSelectWithTerms(
   }
 
   const choices = collectVisibleCustomChoices(trigger);
+  pushDiagnostic(diagnostics, `Visible custom options before direct matching: ${summarizeChoicesForDiagnostics(choices)}`);
 
   if (choices.length === 0) {
+    pushDiagnostic(diagnostics, 'No visible custom options were available to match directly.');
     return false;
   }
 
   if (desiredCount > 1) {
     const bestChoices = getBestSelectChoicesForTerms(choices, normalizedTerms, desiredCount);
     if (bestChoices.length === 0) {
+      pushDiagnostic(diagnostics, 'Direct multi-select matching found no valid custom choices.');
       return false;
     }
 
@@ -1217,11 +1511,13 @@ async function fillCustomSelectWithTerms(
       }
 
       if (bestChoice.selected) {
+        pushDiagnostic(diagnostics, `Custom option already selected: ${bestChoice.label || bestChoice.value}`);
         selectedCount += 1;
         continue;
       }
 
       bestChoice.element.scrollIntoView({ block: 'nearest' });
+      pushDiagnostic(diagnostics, `Clicking direct custom match: ${bestChoice.label || bestChoice.value}`);
       clickCustomChoice(bestChoice.element);
       await delay(60);
       selectedCount += 1;
@@ -1232,6 +1528,11 @@ async function fillCustomSelectWithTerms(
     }
 
     const selectedChoices = collectVisibleCustomChoices(trigger).filter((choice) => choice.selected);
+    await closeCustomSelect(trigger);
+    pushDiagnostic(
+      diagnostics,
+      `Visible selected custom options after direct multi-select: ${summarizeChoicesForDiagnostics(selectedChoices)}`
+    );
     return selectedChoices.length > 0 || getCurrentCustomSelectText(trigger) !== beforeValue;
   }
 
@@ -1240,13 +1541,20 @@ async function fillCustomSelectWithTerms(
     !bestChoice?.element ||
     !canOverwriteCustomSelectValueWithTerms(trigger, bestChoice, normalizedTerms)
   ) {
+    pushDiagnostic(
+      diagnostics,
+      `No safe direct custom match was found. Best candidate: ${bestChoice ? bestChoice.label || bestChoice.value : 'none'}`
+    );
     return false;
   }
 
   bestChoice.element.scrollIntoView({ block: 'nearest' });
+  pushDiagnostic(diagnostics, `Clicking direct custom match: ${bestChoice.label || bestChoice.value}`);
   clickCustomChoice(bestChoice.element);
   await delay(50);
   const afterValue = getCurrentCustomSelectText(trigger);
+  await closeCustomSelect(trigger);
+  pushDiagnostic(diagnostics, `Trigger text after direct custom selection: ${afterValue || 'empty'}`);
   return (
     bestChoice.selected ||
     afterValue === normalizeText(bestChoice.label || bestChoice.value) ||
@@ -1327,6 +1635,8 @@ function setTextValue(
   element: HTMLInputElement | HTMLTextAreaElement,
   value: string
 ): void {
+  element.focus();
+
   if (element instanceof HTMLTextAreaElement) {
     nativeTextAreaValueSetter?.call(element, value);
   } else {
@@ -1337,7 +1647,15 @@ function setTextValue(
     element.value = value;
   }
 
-  dispatchFieldEvents(element);
+  element.dispatchEvent(
+    new InputEvent('input', {
+      bubbles: true,
+      inputType: 'insertText',
+      data: value,
+    })
+  );
+  element.dispatchEvent(new Event('change', { bubbles: true }));
+  element.blur();
 }
 
 function setSelectValue(element: HTMLSelectElement, value: string): void {
@@ -1437,6 +1755,192 @@ function getFieldOptionSummaries(field: FormField): AutofillOptionSummary[] | un
   }
 
   return undefined;
+}
+
+export async function selectFormFieldOptions(
+  payload?: FormSelectOptionsPayload
+): Promise<FormSelectOptionsResult> {
+  const fieldHint = payload?.fieldHint?.trim() || '';
+  const candidateValues = unique((payload?.values || []).map((value) => value.trim()).filter(Boolean));
+  const diagnostics: string[] = [];
+
+  if (!fieldHint || candidateValues.length === 0) {
+    return {
+      status: 'no_match',
+      fieldHint,
+      matchedField: undefined,
+      selectedValues: [],
+      message: 'Provide both a field hint and at least one option value.',
+      diagnostics,
+    };
+  }
+
+  const detector = new FormFieldDetector();
+  const selectFields = detector.detect().filter((field) => field.type === 'select');
+  const matchedField = findBestFieldByHint(selectFields, fieldHint);
+
+  if (!matchedField) {
+    return {
+      status: 'field_not_found',
+      fieldHint,
+      matchedField: undefined,
+      selectedValues: [],
+      message: `No visible select-like field matched "${fieldHint}" on this page.`,
+      diagnostics,
+    };
+  }
+
+  const profile = await getSelectedWebsiteProfile();
+  const resolvedCandidateValues = profile
+    ? unique([
+        ...candidateValues,
+        ...getPreferredSearchTerms(matchedField, profile),
+        ...getSelectCandidateTerms(matchedField, profile),
+      ])
+    : candidateValues;
+
+  const desiredCount = payload?.allowMultiple ? Math.max(candidateValues.length, 1) : 1;
+  pushDiagnostic(diagnostics, `Matched select-like field: ${getFieldDisplayName(matchedField)}`);
+  pushDiagnostic(diagnostics, `Requested option values: ${candidateValues.join(', ')}`);
+  pushDiagnostic(diagnostics, `Resolved option values: ${resolvedCandidateValues.join(', ')}`);
+  const success =
+    matchedField.element instanceof HTMLSelectElement
+      ? fillNativeSelectFieldWithTerms(matchedField, resolvedCandidateValues, desiredCount, diagnostics)
+      : await fillCustomSelectWithTerms(matchedField, resolvedCandidateValues, desiredCount, diagnostics);
+  const selectedValues =
+    matchedField.element instanceof HTMLElement && matchedField.type === 'select'
+      ? getSelectedCustomChoiceLabels(resolveCustomSelectTrigger(matchedField.element))
+      : (getFieldCurrentValue(matchedField)
+          ?.split(',')
+          .map((value) => value.trim())
+          .filter(Boolean)
+          .filter((value) => !containsAny(normalizeText(value), [...SELECT_PLACEHOLDER_TERMS])) ?? []);
+  const matchedFieldName = getFieldDisplayName(matchedField);
+
+  if (!success) {
+    return {
+      status: 'no_match',
+      fieldHint,
+      matchedField: matchedFieldName,
+      selectedValues,
+      message: `Found "${matchedFieldName}", but none of the requested options could be applied: ${resolvedCandidateValues.join(', ')}.`,
+      diagnostics,
+    };
+  }
+
+  return {
+    status: 'selected',
+    fieldHint,
+    matchedField: matchedFieldName,
+    selectedValues,
+    message: `Selected ${selectedValues.length > 0 ? selectedValues.join(', ') : candidateValues.join(', ')} in "${matchedFieldName}".`,
+    diagnostics,
+  };
+}
+
+export async function setFormFieldValue(
+  payload?: FormSetFieldValuePayload
+): Promise<FormSetFieldValueResult> {
+  const fieldHint = payload?.fieldHint?.trim() || '';
+  const desiredValue = payload?.value?.trim() || '';
+  const diagnostics: string[] = [];
+
+  if (!fieldHint || !desiredValue) {
+    return {
+      status: 'no_match',
+      fieldHint,
+      matchedField: undefined,
+      currentValue: undefined,
+      message: 'Provide both a field hint and a non-empty value.',
+      diagnostics,
+    };
+  }
+
+  const detector = new FormFieldDetector();
+  const textFields = detector.detect().filter(
+    (field) =>
+      field.element instanceof HTMLInputElement || field.element instanceof HTMLTextAreaElement
+  );
+  const matchedField = findBestFieldByHint(textFields, fieldHint);
+
+  if (!matchedField) {
+    return {
+      status: 'field_not_found',
+      fieldHint,
+      matchedField: undefined,
+      currentValue: undefined,
+      message: `No visible text-like field matched "${fieldHint}" on this page.`,
+      diagnostics,
+    };
+  }
+
+  if (
+    !(matchedField.element instanceof HTMLInputElement) &&
+    !(matchedField.element instanceof HTMLTextAreaElement)
+  ) {
+    return {
+      status: 'no_match',
+      fieldHint,
+      matchedField: getFieldDisplayName(matchedField),
+      currentValue: getFieldCurrentValue(matchedField),
+      message: `Matched "${getFieldDisplayName(matchedField)}", but it is not a text input.`,
+      diagnostics,
+    };
+  }
+
+  const matchedFieldName = getFieldDisplayName(matchedField);
+  const currentValue = getFieldCurrentValue(matchedField);
+  pushDiagnostic(diagnostics, `Matched text field: ${matchedFieldName}`);
+  pushDiagnostic(diagnostics, `Requested value: ${desiredValue}`);
+  pushDiagnostic(diagnostics, `Current value before update: ${currentValue || 'empty'}`);
+  const normalizedCurrentValue = normalizeText(currentValue);
+  const normalizedDesiredValue = normalizeText(desiredValue);
+
+  if (normalizedCurrentValue === normalizedDesiredValue) {
+    return {
+      status: 'unchanged',
+      fieldHint,
+      matchedField: matchedFieldName,
+      currentValue,
+      message: `"${matchedFieldName}" already contains the requested value.`,
+      diagnostics,
+    };
+  }
+
+  if (normalizedCurrentValue) {
+    return {
+      status: 'unchanged',
+      fieldHint,
+      matchedField: matchedFieldName,
+      currentValue,
+      message: `"${matchedFieldName}" already contains a value and was left unchanged.`,
+      diagnostics,
+    };
+  }
+
+  setTextValue(matchedField.element, desiredValue);
+  const nextValue = getFieldCurrentValue(matchedField);
+  pushDiagnostic(diagnostics, `Current value after update: ${nextValue || 'empty'}`);
+
+  if (normalizeText(nextValue) !== normalizeText(desiredValue)) {
+    return {
+      status: 'no_match',
+      fieldHint,
+      matchedField: matchedFieldName,
+      currentValue: nextValue,
+      message: `Found "${matchedFieldName}", but the page did not accept the requested value.`,
+      diagnostics,
+    };
+  }
+
+  return {
+    status: 'updated',
+    fieldHint,
+    matchedField: matchedFieldName,
+    currentValue: nextValue,
+    message: `Updated "${matchedFieldName}" with the requested value.`,
+    diagnostics,
+  };
 }
 
 function buildFieldSummary(field: FormField, index: number): AutofillFieldSummary {
@@ -1576,6 +2080,283 @@ async function applyLLMMappingPlan(
   };
 }
 
+function getOrderedMappingSteps(plan: LLMFieldMappingResult): LLMFieldMappingStep[] {
+  const seenIndexes = new Set<number>();
+
+  return [...plan.steps]
+    .sort((left, right) => left.fieldIndex - right.fieldIndex)
+    .filter((step) => {
+      if (seenIndexes.has(step.fieldIndex)) {
+        return false;
+      }
+
+      seenIndexes.add(step.fieldIndex);
+      return true;
+    });
+}
+
+async function applyOrderedTextMappingStep(
+  field: FormField,
+  step: LLMFieldMappingStep,
+  order: number
+): Promise<OrderedAutofillStepResult> {
+  const fieldName = getFieldDisplayName(field);
+  const requestedValues = getMappingStepTerms(step);
+  const diagnostics: string[] = [];
+  const desiredValue = step.value?.trim() || requestedValues.join(', ');
+  const currentValue = getFieldCurrentValue(field);
+
+  pushDiagnostic(diagnostics, `Requested text value: ${desiredValue || 'empty'}`);
+  pushDiagnostic(diagnostics, `Current field value before update: ${currentValue || 'empty'}`);
+
+  if (!(field.element instanceof HTMLInputElement || field.element instanceof HTMLTextAreaElement)) {
+    return {
+      order,
+      fieldIndex: step.fieldIndex,
+      fieldName,
+      fieldType: field.type,
+      requestedValues,
+      reasoning: step.reasoning,
+      status: 'blocked',
+      finalValue: currentValue,
+      message: `The planned field "${fieldName}" is not a text input.`,
+      diagnostics,
+    };
+  }
+
+  const normalizedCurrentValue = normalizeText(currentValue);
+  const normalizedDesiredValue = normalizeText(desiredValue);
+
+  if (!desiredValue) {
+    return {
+      order,
+      fieldIndex: step.fieldIndex,
+      fieldName,
+      fieldType: field.type,
+      requestedValues,
+      reasoning: step.reasoning,
+      status: 'blocked',
+      finalValue: currentValue,
+      message: `No text value was provided for "${fieldName}".`,
+      diagnostics,
+    };
+  }
+
+  if (normalizedCurrentValue === normalizedDesiredValue) {
+    return {
+      order,
+      fieldIndex: step.fieldIndex,
+      fieldName,
+      fieldType: field.type,
+      requestedValues,
+      reasoning: step.reasoning,
+      status: 'unchanged',
+      finalValue: currentValue,
+      message: `"${fieldName}" already contains the requested value.`,
+      diagnostics,
+    };
+  }
+
+  if (normalizedCurrentValue) {
+    return {
+      order,
+      fieldIndex: step.fieldIndex,
+      fieldName,
+      fieldType: field.type,
+      requestedValues,
+      reasoning: step.reasoning,
+      status: 'unchanged',
+      finalValue: currentValue,
+      message: `"${fieldName}" already contains a non-empty value and was left unchanged.`,
+      diagnostics,
+    };
+  }
+
+  setTextValue(field.element, desiredValue);
+  const finalValue = getFieldCurrentValue(field);
+  pushDiagnostic(diagnostics, `Current field value after update: ${finalValue || 'empty'}`);
+
+  if (normalizeText(finalValue) !== normalizedDesiredValue) {
+    return {
+      order,
+      fieldIndex: step.fieldIndex,
+      fieldName,
+      fieldType: field.type,
+      requestedValues,
+      reasoning: step.reasoning,
+      status: 'blocked',
+      finalValue,
+      message: `The page did not accept the requested text for "${fieldName}".`,
+      diagnostics,
+    };
+  }
+
+  return {
+    order,
+    fieldIndex: step.fieldIndex,
+    fieldName,
+    fieldType: field.type,
+    requestedValues,
+    reasoning: step.reasoning,
+    status: 'updated',
+    finalValue,
+    message: `Updated "${fieldName}" successfully.`,
+    diagnostics,
+  };
+}
+
+async function applyOrderedSelectMappingStep(
+  field: FormField,
+  step: LLMFieldMappingStep,
+  order: number
+): Promise<OrderedAutofillStepResult> {
+  const fieldName = getFieldDisplayName(field);
+  const requestedValues = getMappingStepTerms(step);
+  const diagnostics: string[] = [];
+  const desiredCount =
+    field.element instanceof HTMLSelectElement && field.element.multiple
+      ? Math.max(step.values?.length || requestedValues.length, 1)
+      : isMultiValueField(field)
+        ? Math.max(step.values?.length || requestedValues.length, 1)
+        : 1;
+
+  pushDiagnostic(diagnostics, `Requested option values: ${requestedValues.join(', ') || 'none'}`);
+  pushDiagnostic(diagnostics, `Current field value before selection: ${getFieldCurrentValue(field) || 'empty'}`);
+
+  if (requestedValues.length === 0) {
+    return {
+      order,
+      fieldIndex: step.fieldIndex,
+      fieldName,
+      fieldType: field.type,
+      requestedValues,
+      reasoning: step.reasoning,
+      status: 'blocked',
+      finalValue: getFieldCurrentValue(field),
+      message: `No option values were provided for "${fieldName}".`,
+      diagnostics,
+    };
+  }
+
+  const success =
+    field.element instanceof HTMLSelectElement
+      ? fillNativeSelectFieldWithTerms(field, requestedValues, desiredCount, diagnostics)
+      : await fillCustomSelectWithTerms(field, requestedValues, desiredCount, diagnostics);
+  const finalValue = getFieldCurrentValue(field);
+  const selectedValues =
+    field.type === 'select' && field.element instanceof HTMLElement
+      ? getSelectedCustomChoiceLabels(resolveCustomSelectTrigger(field.element))
+      : finalValue
+          ?.split(',')
+          .map((value) => value.trim())
+          .filter(Boolean) || [];
+
+  pushDiagnostic(diagnostics, `Values considered selected after execution: ${selectedValues.join(', ') || 'none'}`);
+
+  if (!success) {
+    return {
+      order,
+      fieldIndex: step.fieldIndex,
+      fieldName,
+      fieldType: field.type,
+      requestedValues,
+      reasoning: step.reasoning,
+      status: 'blocked',
+      finalValue,
+      message: `No requested option could be confirmed for "${fieldName}".`,
+      diagnostics,
+    };
+  }
+
+  return {
+    order,
+    fieldIndex: step.fieldIndex,
+    fieldName,
+    fieldType: field.type,
+    requestedValues,
+    reasoning: step.reasoning,
+    status: 'selected',
+    finalValue,
+    message: `Selected ${selectedValues.join(', ') || requestedValues.join(', ')} in "${fieldName}".`,
+    diagnostics,
+  };
+}
+
+async function applyOrderedMappingStep(
+  field: FormField,
+  step: LLMFieldMappingStep,
+  order: number
+): Promise<OrderedAutofillStepResult> {
+  if (field.element instanceof HTMLSelectElement || field.type === 'select') {
+    return applyOrderedSelectMappingStep(field, step, order);
+  }
+
+  return applyOrderedTextMappingStep(field, step, order);
+}
+
+async function runOrderedLLMAutofill(
+  profile: SelectedWebsiteProfile,
+  scopedFields: FormField[]
+): Promise<OrderedAutofillExecution> {
+  const request = buildLLMFieldMappingRequest(profile, scopedFields);
+  const plan = await requestLLMFieldMapping(request);
+  const orderedPlanSteps = getOrderedMappingSteps(plan);
+  const steps: OrderedAutofillStepResult[] = [];
+  const filledFields: string[] = [];
+
+  for (const planStep of orderedPlanSteps) {
+    const field = scopedFields[planStep.fieldIndex];
+    const nextOrder = steps.length + 1;
+
+    if (!field) {
+      const blockedStep: OrderedAutofillStepResult = {
+        order: nextOrder,
+        fieldIndex: planStep.fieldIndex,
+        fieldName: `Field ${planStep.fieldIndex}`,
+        fieldType: 'unknown',
+        requestedValues: getMappingStepTerms(planStep),
+        reasoning: planStep.reasoning,
+        status: 'blocked',
+        message: `The AI plan referenced field index ${planStep.fieldIndex}, but that field is no longer available on the page.`,
+        diagnostics: ['The page field order changed between planning and execution.'],
+      };
+
+      steps.push(blockedStep);
+      return {
+        filledFields: unique(filledFields),
+        planSummary: plan.summary,
+        steps,
+        blockedStep,
+      };
+    }
+
+    const stepResult = await applyOrderedMappingStep(field, planStep, nextOrder);
+    steps.push(stepResult);
+
+    if (stepResult.status === 'updated' || stepResult.status === 'selected') {
+      filledFields.push(stepResult.fieldName);
+      continue;
+    }
+
+    if (stepResult.status === 'unchanged') {
+      continue;
+    }
+
+    return {
+      filledFields: unique(filledFields),
+      planSummary: plan.summary,
+      steps,
+      blockedStep: stepResult,
+    };
+  }
+
+  return {
+    filledFields: unique(filledFields),
+    planSummary: plan.summary,
+    steps,
+  };
+}
+
 function normalizePageElementInfoValue(info: {
   value?: string;
   selectedText?: string;
@@ -1598,12 +2379,17 @@ async function executePageAutofillStep(step: LLMPageAutofillStep): Promise<boole
   const beforeValue = normalizePageElementInfoValue(beforeInfo);
 
   if (step.action === 'input' && step.text) {
-    await inputPageElement(step.index, step.text, true);
+    const normalizedTargetValue = normalizeText(step.text);
+    if (beforeValue) {
+      return false;
+    }
+
+    await inputPageElement(step.index, step.text, false);
     const afterInfo = await getPageElementInfo(step.index).catch(
       () => ({}) as Awaited<ReturnType<typeof getPageElementInfo>>
     );
     const afterValue = normalizePageElementInfoValue(afterInfo);
-    return afterValue === normalizeText(step.text) && afterValue !== beforeValue;
+    return afterValue === normalizedTargetValue && afterValue !== beforeValue;
   }
 
   if (step.action === 'select' && step.option) {
@@ -1727,6 +2513,101 @@ async function tryLLMAutofill(
   const request = buildLLMFieldMappingRequest(profile, scopedFields);
   const plan = await requestLLMFieldMapping(request);
   return applyLLMMappingPlan(scopedFields, plan);
+}
+
+export async function orderedAutofillFromSelectedWebsite(
+  targetElement: Element | null = document.activeElement
+): Promise<OrderedAutofillResult> {
+  const profile = await getSelectedWebsiteProfile();
+
+  if (!profile) {
+    return {
+      status: 'missing_profile',
+      message: 'Select a website profile in the extension before ordered autofill.',
+      completedCount: 0,
+      totalCount: 0,
+      filledFields: [],
+      steps: [],
+    };
+  }
+
+  const detector = new FormFieldDetector();
+  const targetField = resolveTargetField(detector, targetElement);
+
+  if (!targetField) {
+    return {
+      status: 'no_target',
+      profileName: profile.name,
+      profileUrl: profile.url,
+      message: 'No supported form fields were detected on this page.',
+      completedCount: 0,
+      totalCount: 0,
+      filledFields: [],
+      steps: [],
+    };
+  }
+
+  const scopedFields = getScopeFields(detector, targetField);
+
+  try {
+    const execution = await runOrderedLLMAutofill(profile, scopedFields);
+    const totalCount = execution.steps.length;
+    const completedCount = execution.steps.filter((step) =>
+      step.status === 'updated' || step.status === 'selected' || step.status === 'unchanged'
+    ).length;
+
+    if (execution.steps.length === 0) {
+      return {
+        status: 'no_matches',
+        profileName: profile.name,
+        profileUrl: profile.url,
+        planSummary: execution.planSummary,
+        message: 'The AI planner did not return any safe field mappings for this page.',
+        completedCount,
+        totalCount,
+        filledFields: execution.filledFields,
+        steps: [],
+      };
+    }
+
+    if (execution.blockedStep) {
+      return {
+        status: 'blocked',
+        profileName: profile.name,
+        profileUrl: profile.url,
+        planSummary: execution.planSummary,
+        message: execution.blockedStep.message,
+        completedCount,
+        totalCount,
+        filledFields: execution.filledFields,
+        steps: execution.steps,
+      };
+    }
+
+    return {
+      status: 'completed',
+      profileName: profile.name,
+      profileUrl: profile.url,
+      planSummary: execution.planSummary,
+      message: `Completed ${completedCount} ordered field step${completedCount === 1 ? '' : 's'} for ${profile.name}.`,
+      completedCount,
+      totalCount,
+      filledFields: execution.filledFields,
+      steps: execution.steps,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      status: 'blocked',
+      profileName: profile.name,
+      profileUrl: profile.url,
+      message,
+      completedCount: 0,
+      totalCount: 0,
+      filledFields: [],
+      steps: [],
+    };
+  }
 }
 
 export async function autofillFormFromSelectedWebsite(

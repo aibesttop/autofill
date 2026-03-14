@@ -111,10 +111,13 @@ export class FormFieldDetector {
 
     const role = element.getAttribute('role')?.toLowerCase();
     const ariaHasPopup = element.getAttribute('aria-haspopup')?.toLowerCase();
+    const hasExpandedControl = element.hasAttribute('aria-expanded') && element.hasAttribute('aria-controls');
 
     return (
       role === 'combobox' ||
-      ariaHasPopup === 'listbox'
+      ariaHasPopup === 'listbox' ||
+      ariaHasPopup === 'dialog' ||
+      hasExpandedControl
     );
   }
 

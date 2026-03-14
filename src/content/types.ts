@@ -10,12 +10,26 @@ export type ContentMessageType =
   | 'contextmenu:open-panel'
   | 'floatingButton:toggle'
   | 'form:detect'
-  | 'form:fill';
+  | 'form:fill'
+  | 'form:ordered-fill'
+  | 'form:set-field-value'
+  | 'form:select-options';
 
 export type AutofillStrategy = 'auto' | 'llm' | 'heuristic';
 
 export interface FormFillPayload {
   strategy?: AutofillStrategy;
+}
+
+export interface FormSelectOptionsPayload {
+  fieldHint: string;
+  values: string[];
+  allowMultiple?: boolean;
+}
+
+export interface FormSetFieldValuePayload {
+  fieldHint: string;
+  value: string;
 }
 
 export interface PluginState {
@@ -62,6 +76,49 @@ export interface AutofillResult {
   filledFields: string[];
   strategy?: 'llm' | 'heuristic';
   planSummary?: string;
+}
+
+export interface FormSelectOptionsResult {
+  status: 'selected' | 'field_not_found' | 'no_match';
+  fieldHint: string;
+  matchedField?: string;
+  selectedValues: string[];
+  message: string;
+  diagnostics?: string[];
+}
+
+export interface FormSetFieldValueResult {
+  status: 'updated' | 'unchanged' | 'field_not_found' | 'no_match';
+  fieldHint: string;
+  matchedField?: string;
+  currentValue?: string;
+  message: string;
+  diagnostics?: string[];
+}
+
+export interface OrderedAutofillStepResult {
+  order: number;
+  fieldIndex: number;
+  fieldName: string;
+  fieldType: string;
+  requestedValues: string[];
+  reasoning?: string;
+  status: 'updated' | 'selected' | 'unchanged' | 'blocked' | 'skipped';
+  finalValue?: string;
+  message: string;
+  diagnostics: string[];
+}
+
+export interface OrderedAutofillResult {
+  status: 'completed' | 'blocked' | 'missing_profile' | 'no_target' | 'no_matches';
+  profileName?: string;
+  profileUrl?: string;
+  planSummary?: string;
+  message: string;
+  completedCount: number;
+  totalCount: number;
+  filledFields: string[];
+  steps: OrderedAutofillStepResult[];
 }
 
 export interface AutofillOptionSummary {

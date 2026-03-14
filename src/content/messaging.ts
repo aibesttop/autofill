@@ -6,12 +6,22 @@ import type { ContentMessageType } from './types';
 import { getStorageManager } from './storage';
 import { getTwitterDetector } from './twitter';
 import { FormFieldDetector } from './form-detector';
-import { autofillFormFromSelectedWebsite } from './form-autofill';
+import {
+  autofillFormFromSelectedWebsite,
+  orderedAutofillFromSelectedWebsite,
+  selectFormFieldOptions,
+  setFormFieldValue,
+} from './form-autofill';
 import type {
   AutofillResult,
   DetectedFormField,
   FormDetectionResult,
   FormFillPayload,
+  OrderedAutofillResult,
+  FormSetFieldValuePayload,
+  FormSetFieldValueResult,
+  FormSelectOptionsPayload,
+  FormSelectOptionsResult,
 } from './types';
 
 export class ContentMessageHandler {
@@ -38,6 +48,12 @@ export class ContentMessageHandler {
           return this.handleFormDetect();
         case 'form:fill':
           return this.handleFormFill(payload);
+        case 'form:ordered-fill':
+          return this.handleOrderedFormFill();
+        case 'form:set-field-value':
+          return this.handleFormSetFieldValue(payload);
+        case 'form:select-options':
+          return this.handleFormSelectOptions(payload);
         default:
           console.warn('[Content Messaging] Unknown message type:', type);
           return { success: false, error: 'Unknown message type' };
@@ -143,6 +159,25 @@ export class ContentMessageHandler {
     payload?: FormFillPayload
   ): Promise<{ success: true; result: AutofillResult }> {
     const result = await autofillFormFromSelectedWebsite(document.activeElement, payload?.strategy);
+    return { success: true, result };
+  }
+
+  private async handleOrderedFormFill(): Promise<{ success: true; result: OrderedAutofillResult }> {
+    const result = await orderedAutofillFromSelectedWebsite(document.activeElement);
+    return { success: true, result };
+  }
+
+  private async handleFormSelectOptions(
+    payload?: FormSelectOptionsPayload
+  ): Promise<{ success: true; result: FormSelectOptionsResult }> {
+    const result = await selectFormFieldOptions(payload);
+    return { success: true, result };
+  }
+
+  private async handleFormSetFieldValue(
+    payload?: FormSetFieldValuePayload
+  ): Promise<{ success: true; result: FormSetFieldValueResult }> {
+    const result = await setFormFieldValue(payload);
     return { success: true, result };
   }
 

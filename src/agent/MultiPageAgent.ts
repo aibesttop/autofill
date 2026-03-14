@@ -1,6 +1,7 @@
 import { type AgentConfig, PageAgentCore } from '@page-agent/core';
 
 import { createFormTools } from './formTools';
+import { createGuardedBrowserTools, detectLoopGuardObservation } from './loopGuard';
 import { RemotePageController } from './RemotePageController';
 import { TabsController } from './TabsController';
 import SYSTEM_PROMPT from './system_prompt.md?raw';
@@ -25,6 +26,7 @@ export class MultiPageAgent extends PageAgentCore {
     const customTools = {
       ...createTabTools(tabsController),
       ...createFormTools(tabsController),
+      ...createGuardedBrowserTools(),
     };
 
     // system prompt - auto-detect language if not specified
@@ -42,6 +44,7 @@ export class MultiPageAgent extends PageAgentCore {
      * Heartbeat mechanism for detecting when side-panel is closed
      */
     let heartBeatInterval: null | number = null;
+    let lastLoopGuardObservation: string | null = null;
 
     super({
       ...config,
@@ -77,6 +80,18 @@ export class MultiPageAgent extends PageAgentCore {
       onBeforeStep: async () => {
         // make sure the current tab is loaded before the step starts
         await tabsController.waitUntilTabLoaded(tabsController.currentTabId!);
+      },
+
+      onAfterStep: async (agent, history) => {
+        const observation = detectLoopGuardObservation(history);
+        if (observation && observation !== lastLoopGuardObservation) {
+          (agent as typeof agent & { pushObservation?: (content: string) => void }).pushObservation?.(
+            `[loop-guard] ${observation}`
+          );
+          lastLoopGuardObservation = observation;
+        } else if (!observation) {
+          lastLoopGuardObservation = null;
+        }
       },
 
       onDispose: () => {
