@@ -69,6 +69,11 @@ const nativeSelectValueSetter = Object.getOwnPropertyDescriptor(
   'value'
 )?.set;
 
+const nativeCheckedSetter = Object.getOwnPropertyDescriptor(
+  window.HTMLInputElement.prototype,
+  'checked'
+)?.set;
+
 const SELECT_PLACEHOLDER_TERMS = [
   'select',
   'choose',
@@ -2024,6 +2029,23 @@ async function fillCustomSelect(field: FormField, profile: SelectedWebsiteProfil
   return fillCustomSelectWithTerms(field, searchTerms, desiredCount);
 }
 
+function toggleCheckboxViaReact(checkbox: HTMLInputElement): void {
+  const nextChecked = !checkbox.checked;
+
+  // Use the native setter to bypass React's controlled-component override,
+  // mirroring the setTextControlValue pattern that already works for text inputs.
+  nativeCheckedSetter?.call(checkbox, nextChecked);
+  if (checkbox.checked !== nextChecked) {
+    checkbox.checked = nextChecked;
+  }
+
+  checkbox.dispatchEvent(new Event('input', { bubbles: true }));
+  checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+
+  // Also dispatch a click event so React's onClick handler fires.
+  checkbox.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+}
+
 function clickCustomChoice(element: HTMLElement): void {
   const nestedInput = element.querySelector<HTMLInputElement>('input[type="checkbox"], input[type="radio"]');
   const label = element.closest('label') || element.querySelector('label');
@@ -2031,21 +2053,47 @@ function clickCustomChoice(element: HTMLElement): void {
   // Ensure the option is visible before clicking
   element.scrollIntoView({ behavior: 'auto', block: 'nearest' });
 
+  // Strategy 1: If there's a nested checkbox/radio, toggle it directly via React-compatible path
+  if (nestedInput) {
+    nestedInput.focus();
+    dispatchMouseSequence(nestedInput);
+
+    const checkedBefore = nestedInput.checked;
+    nestedInput.click();
+
+    // If .click() didn't toggle the state (common in React controlled components),
+    // force-toggle via native setter + synthetic events
+    if (nestedInput.checked === checkedBefore) {
+      toggleCheckboxViaReact(nestedInput);
+    }
+    return;
+  }
+
+  // Strategy 2: Click the label element (which should toggle associated input)
   if (label instanceof HTMLElement) {
     dispatchMouseSequence(label);
     label.click();
     return;
   }
 
-  if (nestedInput) {
-    nestedInput.focus();
-    dispatchMouseSequence(nestedInput);
-    nestedInput.click();
-    return;
-  }
-
+  // Strategy 3: Click the element itself and handle aria-based state
   dispatchMouseSequence(element);
   element.click();
+
+  // For elements that use aria-selected/aria-checked instead of real checkboxes,
+  // force-set the attribute if the click didn't change it
+  if (
+    element.getAttribute('aria-selected') === 'false' ||
+    element.getAttribute('aria-checked') === 'false'
+  ) {
+    if (element.hasAttribute('aria-selected')) {
+      element.setAttribute('aria-selected', 'true');
+    }
+    if (element.hasAttribute('aria-checked')) {
+      element.setAttribute('aria-checked', 'true');
+    }
+    element.dispatchEvent(new Event('change', { bubbles: true }));
+  }
 }
 
 function isFieldEmpty(field: FormField): boolean {
