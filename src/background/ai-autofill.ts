@@ -18,7 +18,7 @@ const FIELD_MAPPING_STEP_SCHEMA = z
   .object({
     fieldIndex: z.number().int().nonnegative(),
     value: z.string().trim().min(1).max(400).optional(),
-    values: z.array(z.string().trim().min(1).max(200)).min(1).max(8).optional(),
+    values: z.array(z.string().trim().min(1).max(200)).min(1).max(30).optional(),
     reasoning: z.string().trim().max(240).optional(),
   })
   .superRefine((step, ctx) => {
