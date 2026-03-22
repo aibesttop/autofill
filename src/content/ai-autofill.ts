@@ -1,6 +1,8 @@
 import type {
   LLMFieldMappingRequest,
   LLMFieldMappingResult,
+  LLMObservedOptionMatchRequest,
+  LLMObservedOptionMatchResult,
   LLMPageAutofillPlanRequest,
   LLMPageAutofillPlanResult,
 } from './types';
@@ -14,6 +16,12 @@ interface AIFieldMappingResponse {
 interface AIPageAutofillResponse {
   success?: boolean;
   result?: LLMPageAutofillPlanResult;
+  error?: string;
+}
+
+interface AIObservedOptionMatchResponse {
+  success?: boolean;
+  result?: LLMObservedOptionMatchResult;
   error?: string;
 }
 
@@ -42,6 +50,21 @@ export async function requestLLMPageAutofillPlan(
 
   if (!response?.success || !response.result) {
     throw new Error(response?.error || 'No AI page action plan was returned.');
+  }
+
+  return response.result;
+}
+
+export async function requestLLMObservedOptionMatch(
+  request: LLMObservedOptionMatchRequest
+): Promise<LLMObservedOptionMatchResult> {
+  const response = (await chrome.runtime.sendMessage({
+    type: 'ai:observed-option-match',
+    payload: request,
+  })) as AIObservedOptionMatchResponse;
+
+  if (!response?.success || !response.result) {
+    throw new Error(response?.error || 'No constrained option match was returned.');
   }
 
   return response.result;

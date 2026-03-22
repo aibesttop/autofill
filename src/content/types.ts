@@ -171,6 +171,21 @@ export interface LLMFieldMappingResult {
   steps: LLMFieldMappingStep[];
 }
 
+export interface LLMObservedOptionMatchRequest {
+  pageTitle: string;
+  pageUrl: string;
+  fieldLabel: string;
+  requestedValues: string[];
+  observedOptions: string[];
+  allowMultiple?: boolean;
+}
+
+export interface LLMObservedOptionMatchResult {
+  summary: string;
+  selectedOptions: string[];
+  reasoning?: string;
+}
+
 export type PageAutofillActionType = 'input' | 'select' | 'click';
 
 export interface LLMPageAutofillPlanRequest {

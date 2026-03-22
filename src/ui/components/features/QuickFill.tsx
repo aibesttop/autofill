@@ -19,10 +19,6 @@ const STATUS_COPY: Record<AgentStatus, string> = {
   error: 'The agent stopped before finishing the current page.',
 };
 
-function truncateText(value: string, maxLength: number): string {
-  return value.length > maxLength ? `${value.slice(0, maxLength - 1)}…` : value;
-}
-
 function getHostnameLabel(url: string | undefined): string {
   if (!url) {
     return 'Current page';
@@ -75,25 +71,25 @@ function getHistoryEventText(event: HistoricalEvent): string {
   if (event.type === 'step') {
     if (event.action?.name === 'done') {
       const doneInput = event.action.input as { text?: string } | undefined;
-      return truncateText(doneInput?.text || event.action.output || 'Agent run completed.', 360);
+      return doneInput?.text || event.action.output || 'Agent run completed.';
     }
 
     const actionOutput =
       typeof event.action?.output === 'string' && event.action.output.trim().length > 0
         ? event.action.output
         : `Executed ${event.action?.name || 'agent step'}.`;
-    return truncateText(actionOutput, 360);
+    return actionOutput;
   }
 
   if (event.type === 'observation') {
-    return truncateText(event.content, 360);
+    return event.content;
   }
 
   if (event.type === 'retry') {
-    return truncateText(event.message, 360);
+    return event.message;
   }
 
-  return truncateText('message' in event ? event.message : 'Agent execution requires manual takeover.', 360);
+  return 'message' in event ? event.message : 'Agent execution requires manual takeover.';
 }
 
 function getActivityText(activity: AgentActivity | null): string | null {
@@ -283,7 +279,7 @@ export const QuickFill: React.FC = () => {
     }
   };
 
-  const recentEvents = history.slice(-12);
+  const recentEvents = history.slice(-20);
   const activityText = getActivityText(activity);
 
   return (

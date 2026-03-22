@@ -1,5 +1,9 @@
 import { STORAGE_KEYS, LOCAL_TEST_DEFAULT_WEBSITE, LOCAL_TEST_MODE } from './constants';
-import { requestLLMFieldMapping, requestLLMPageAutofillPlan } from './ai-autofill';
+import {
+  requestLLMFieldMapping,
+  requestLLMObservedOptionMatch,
+  requestLLMPageAutofillPlan,
+} from './ai-autofill';
 import { FormFieldDetector } from './form-detector';
 import {
   clickPageElement,
@@ -667,6 +671,40 @@ function getBestSelectChoicesForTerms(
     .map((item) => item.choice);
 }
 
+function getTopScoredChoicesForTerms(
+  choices: SelectChoice[],
+  terms: string[],
+  limit = 5
+): Array<{ choice: SelectChoice; score: number }> {
+  return choices
+    .map((choice) => ({
+      choice,
+      score: getChoiceScoreForTerms(choice, terms),
+    }))
+    .filter((item) => item.score > 0)
+    .sort((left, right) => right.score - left.score)
+    .slice(0, limit);
+}
+
+function mergeObservedChoices(
+  target: Map<string, SelectChoice>,
+  choices: SelectChoice[]
+): void {
+  for (const choice of choices) {
+    const key = getChoiceKey(choice);
+    const existing = target.get(key);
+
+    if (!existing) {
+      target.set(key, choice);
+      continue;
+    }
+
+    if (choice.selected && !existing.selected) {
+      target.set(key, choice);
+    }
+  }
+}
+
 function setSelectValues(element: HTMLSelectElement, values: string[]): void {
   const nextValues = new Set(values);
 
@@ -1011,6 +1049,34 @@ function getLoosePopupOptionElements(container: HTMLElement): HTMLElement[] {
   ).filter(isCustomOptionCandidate);
 }
 
+function getPopupContainerDistance(trigger: HTMLElement, candidate: HTMLElement): number {
+  const triggerRect = trigger.getBoundingClientRect();
+  const candidateRect = candidate.getBoundingClientRect();
+  return Math.abs(candidateRect.top - triggerRect.bottom);
+}
+
+function scorePopupContainer(trigger: HTMLElement, candidate: HTMLElement): number {
+  const role = candidate.getAttribute('role')?.toLowerCase();
+  const hasSearch = !!getSearchInput(candidate);
+  const hasCheckboxes = !!candidate.querySelector('input[type="checkbox"], [role="checkbox"]');
+  const optionCount = candidate.querySelectorAll(
+    [...CUSTOM_SELECT_OPTION_SELECTORS, ...LOOSE_CUSTOM_SELECT_OPTION_SELECTORS].join(', ')
+  ).length;
+  const distance = getPopupContainerDistance(trigger, candidate);
+
+  let score = 0;
+  if (role === 'listbox') score += 20;
+  if (role === 'dialog') score += 12;
+  if (role === 'menu') score += 8;
+  if (candidate.matches(CUSTOM_SELECT_CONTAINER_SELECTORS.join(', '))) score += 6;
+  if (hasSearch) score += 6;
+  if (hasCheckboxes) score += 14;
+  score += Math.min(optionCount, 10);
+  score += Math.max(0, 8 - Math.round(distance / 60));
+
+  return score;
+}
+
 function getControlledPopupContainers(element: HTMLElement): HTMLElement[] {
   const popupIds = [element.getAttribute('aria-controls'), element.getAttribute('aria-owns')]
     .flatMap((value) => (value ? value.split(/\s+/) : []))
@@ -1022,33 +1088,20 @@ function getControlledPopupContainers(element: HTMLElement): HTMLElement[] {
 }
 
 function getVisibleCustomOptionElements(element: HTMLElement): HTMLElement[] {
-  const controlledContainers = getControlledPopupContainers(element);
   const optionSelector = getCustomOptionSelector();
+  const popupContainers = getPopupContainers(element);
 
-  if (controlledContainers.length > 0) {
-    return uniqueElements(
-      controlledContainers.flatMap((container) => [
-        ...Array.from(container.querySelectorAll<HTMLElement>(optionSelector)).filter(isCustomOptionCandidate),
-        ...getLoosePopupOptionElements(container),
-      ])
-    ).sort((left, right) => getElementDepth(right) - getElementDepth(left));
-  }
-
-  const popupContainers = Array.from(
-    document.querySelectorAll<HTMLElement>(CUSTOM_SELECT_CONTAINER_SELECTORS.join(', '))
-  ).filter(isVisibleElement);
   if (popupContainers.length > 0) {
+    const primaryContainer = popupContainers[0];
     return uniqueElements(
-      popupContainers.flatMap((container) => [
-        ...Array.from(container.querySelectorAll<HTMLElement>(optionSelector)).filter(isCustomOptionCandidate),
-        ...getLoosePopupOptionElements(container),
-      ])
+      [
+        ...Array.from(primaryContainer.querySelectorAll<HTMLElement>(optionSelector)).filter(isCustomOptionCandidate),
+        ...getLoosePopupOptionElements(primaryContainer),
+      ]
     ).sort((left, right) => getElementDepth(right) - getElementDepth(left));
   }
 
-  return uniqueElements(
-    Array.from(document.querySelectorAll<HTMLElement>(optionSelector)).filter(isCustomOptionCandidate)
-  ).sort((left, right) => getElementDepth(right) - getElementDepth(left));
+  return [];
 }
 
 function getNearbyPopupContainers(trigger: HTMLElement): HTMLElement[] {
@@ -1088,11 +1141,47 @@ function getNearbyPopupContainers(trigger: HTMLElement): HTMLElement[] {
       return hasSearch || hasCheckboxes || hasChoiceRows;
     })
     .sort((left, right) => {
-      const leftRect = left.getBoundingClientRect();
-      const rightRect = right.getBoundingClientRect();
-      const leftDistance = Math.abs(leftRect.top - triggerRect.bottom);
-      const rightDistance = Math.abs(rightRect.top - triggerRect.bottom);
-      return leftDistance - rightDistance;
+      const scoreDelta = scorePopupContainer(trigger, right) - scorePopupContainer(trigger, left);
+      if (scoreDelta !== 0) {
+        return scoreDelta;
+      }
+
+      return getPopupContainerDistance(trigger, left) - getPopupContainerDistance(trigger, right);
+    });
+}
+
+function getKnownPopupContainersNearTrigger(trigger: HTMLElement): HTMLElement[] {
+  const triggerRect = trigger.getBoundingClientRect();
+
+  return Array.from(
+    document.querySelectorAll<HTMLElement>(CUSTOM_SELECT_CONTAINER_SELECTORS.join(', '))
+  )
+    .filter((candidate) => {
+      if (
+        !isVisibleElement(candidate) ||
+        candidate === trigger ||
+        candidate.contains(trigger) ||
+        trigger.contains(candidate)
+      ) {
+        return false;
+      }
+
+      const rect = candidate.getBoundingClientRect();
+      if (rect.width < 120 || rect.height < 40) {
+        return false;
+      }
+
+      const overlapsHorizontally = rect.left <= triggerRect.right + 64 && rect.right >= triggerRect.left - 64;
+      const isNearbyVertically = rect.top <= triggerRect.bottom + 360 && rect.bottom >= triggerRect.top - 32;
+      return overlapsHorizontally && isNearbyVertically;
+    })
+    .sort((left, right) => {
+      const scoreDelta = scorePopupContainer(trigger, right) - scorePopupContainer(trigger, left);
+      if (scoreDelta !== 0) {
+        return scoreDelta;
+      }
+
+      return getPopupContainerDistance(trigger, left) - getPopupContainerDistance(trigger, right);
     });
 }
 
@@ -1102,9 +1191,7 @@ function getPopupContainers(element: HTMLElement): HTMLElement[] {
     return controlledContainers;
   }
 
-  const knownContainers = Array.from(
-    document.querySelectorAll<HTMLElement>(CUSTOM_SELECT_CONTAINER_SELECTORS.join(', '))
-  ).filter(isVisibleElement);
+  const knownContainers = getKnownPopupContainersNearTrigger(element);
   if (knownContainers.length > 0) {
     return knownContainers;
   }
@@ -1120,6 +1207,24 @@ function getSelectedCustomChoiceLabels(trigger: HTMLElement): string[] {
       .map((value) => value.trim())
       .filter(Boolean)
   );
+}
+
+function isCustomSelectOpen(trigger: HTMLElement): boolean {
+  if (trigger.getAttribute('aria-expanded') === 'true') {
+    return true;
+  }
+
+  if (getControlledPopupContainers(trigger).length > 0) {
+    return true;
+  }
+
+  const popupContainers = getPopupContainers(trigger);
+  if (popupContainers.length === 0) {
+    return false;
+  }
+
+  const topContainer = popupContainers[0];
+  return scorePopupContainer(trigger, topContainer) >= 18;
 }
 
 async function closeCustomSelect(trigger: HTMLElement): Promise<void> {
@@ -1217,6 +1322,76 @@ function collectVisibleCustomChoices(trigger: HTMLElement): SelectChoice[] {
     .filter((choice) => !containsAny(normalizeText(choice.label || choice.value), [...SELECT_PLACEHOLDER_TERMS]));
 }
 
+async function gatherObservedCustomChoices(
+  trigger: HTMLElement,
+  terms: string[],
+  diagnostics?: string[]
+): Promise<SelectChoice[]> {
+  const observedChoices = new Map<string, SelectChoice>();
+  const normalizedTerms = normalizeCandidateTerms(terms);
+
+  let popupContainers = getPopupContainers(trigger);
+  if (popupContainers.length === 0) {
+    const didOpen = await openCustomSelect(trigger, diagnostics);
+    if (!didOpen) {
+      return [];
+    }
+    popupContainers = getPopupContainers(trigger);
+  }
+
+  mergeObservedChoices(observedChoices, collectVisibleCustomChoices(trigger));
+  pushDiagnostic(
+    diagnostics,
+    `Initially observed custom options: ${summarizeChoicesForDiagnostics(Array.from(observedChoices.values()))}`
+  );
+
+  const searchInput = popupContainers.map(getSearchInput).find(Boolean) || null;
+  if (searchInput) {
+    for (const term of normalizedTerms) {
+      searchInput.focus();
+      setTextControlValue(searchInput, term);
+      pushDiagnostic(diagnostics, `Observed-option scan typed search term: ${term}`);
+      await delay(120);
+      const visibleChoices = collectVisibleCustomChoices(trigger);
+      mergeObservedChoices(observedChoices, visibleChoices);
+      pushDiagnostic(
+        diagnostics,
+        `Observed options after scan term "${term}": ${summarizeChoicesForDiagnostics(visibleChoices)}`
+      );
+    }
+
+    setTextControlValue(searchInput, '');
+    await delay(80);
+    mergeObservedChoices(observedChoices, collectVisibleCustomChoices(trigger));
+    pushDiagnostic(diagnostics, 'Cleared picker search after observed-option scan.');
+  }
+
+  const scrollContainers = getScrollablePopupContainers(trigger);
+  scrollContainers.forEach(resetScrollPosition);
+  if (scrollContainers.length > 0) {
+    await delay(60);
+  }
+
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const visibleChoices = collectVisibleCustomChoices(trigger);
+    mergeObservedChoices(observedChoices, visibleChoices);
+
+    const didScroll = scrollContainers.map(scrollPopupContainerStep).some(Boolean);
+    if (!didScroll) {
+      break;
+    }
+
+    await delay(80);
+  }
+
+  const observed = Array.from(observedChoices.values());
+  pushDiagnostic(
+    diagnostics,
+    `Observed option universe: ${summarizeChoicesForDiagnostics(observed, 16)}`
+  );
+  return observed;
+}
+
 function getScrollablePopupContainers(trigger: HTMLElement): HTMLElement[] {
   return uniqueElements(
     getPopupContainers(trigger).flatMap((container) => [
@@ -1248,10 +1423,96 @@ function scrollPopupContainerStep(container: HTMLElement): boolean {
   return true;
 }
 
-async function openCustomSelect(element: HTMLElement): Promise<void> {
+async function openCustomSelect(element: HTMLElement, diagnostics?: string[]): Promise<boolean> {
+  if (isCustomSelectOpen(element)) {
+    pushDiagnostic(diagnostics, 'Custom picker was already open.');
+    return true;
+  }
+
+  const attemptOpen = async (
+    label: string,
+    action: () => void | Promise<void>,
+    waitMs = 100
+  ): Promise<boolean> => {
+    await action();
+    await delay(waitMs);
+    const opened = isCustomSelectOpen(element);
+    pushDiagnostic(diagnostics, `${label}: ${opened ? 'opened' : 'not opened'}`);
+    return opened;
+  };
+
   element.focus();
-  dispatchMouseSequence(element);
-  await delay(80);
+
+  if (
+    await attemptOpen('Open attempt via pointer sequence', async () => {
+      dispatchMouseSequence(element);
+    })
+  ) {
+    return true;
+  }
+
+  if (
+    await attemptOpen('Open attempt via element.click()', async () => {
+      element.click();
+    })
+  ) {
+    return true;
+  }
+
+  if (
+    await attemptOpen('Open attempt via Enter key', async () => {
+      element.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+      );
+      element.dispatchEvent(
+        new KeyboardEvent('keyup', { key: 'Enter', bubbles: true, cancelable: true })
+      );
+    })
+  ) {
+    return true;
+  }
+
+  if (
+    await attemptOpen('Open attempt via ArrowDown key', async () => {
+      element.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true })
+      );
+      element.dispatchEvent(
+        new KeyboardEvent('keyup', { key: 'ArrowDown', bubbles: true, cancelable: true })
+      );
+    })
+  ) {
+    return true;
+  }
+
+  if (
+    await attemptOpen('Open attempt via Space key', async () => {
+      element.dispatchEvent(
+        new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true, cancelable: true })
+      );
+      element.dispatchEvent(
+        new KeyboardEvent('keyup', { key: ' ', code: 'Space', bubbles: true, cancelable: true })
+      );
+    })
+  ) {
+    return true;
+  }
+
+  const nestedButton = element.querySelector<HTMLElement>('button, [role="button"], svg');
+  if (
+    nestedButton &&
+    isVisibleElement(nestedButton) &&
+    await attemptOpen('Open attempt via nested trigger', async () => {
+      nestedButton.focus();
+      dispatchMouseSequence(nestedButton);
+      nestedButton.click();
+    })
+  ) {
+    return true;
+  }
+
+  pushDiagnostic(diagnostics, 'Failed to open the custom picker after all open attempts.');
+  return false;
 }
 
 async function findAndSelectChoicesWithSearchTerms(
@@ -1275,7 +1536,10 @@ async function findAndSelectChoicesWithSearchTerms(
 
     let popupContainers = getPopupContainers(trigger);
     if (popupContainers.length === 0) {
-      await openCustomSelect(trigger);
+      const didOpen = await openCustomSelect(trigger, diagnostics);
+      if (!didOpen) {
+        break;
+      }
       popupContainers = getPopupContainers(trigger);
     }
 
@@ -1358,7 +1622,10 @@ async function findAndSelectChoicesByScrollingTerms(
 
     let popupContainers = getPopupContainers(trigger);
     if (popupContainers.length === 0) {
-      await openCustomSelect(trigger);
+      const didOpen = await openCustomSelect(trigger, diagnostics);
+      if (!didOpen) {
+        break;
+      }
       popupContainers = getPopupContainers(trigger);
     }
 
@@ -1416,6 +1683,70 @@ async function findAndSelectChoicesByScrollingTerms(
   }
 
   return selectedCount;
+}
+
+async function resolveObservedChoicesWithLLM(
+  field: FormField,
+  requestedTerms: string[],
+  observedChoices: SelectChoice[],
+  desiredCount: number,
+  diagnostics?: string[]
+): Promise<SelectChoice[]> {
+  if (observedChoices.length === 0) {
+    pushDiagnostic(diagnostics, 'No observed options were available for constrained LLM matching.');
+    return [];
+  }
+
+  const observedOptionLabels = unique(
+    observedChoices
+      .map((choice) => (choice.label || choice.value).trim())
+      .filter(Boolean)
+  );
+  const topScoredChoices = getTopScoredChoicesForTerms(observedChoices, requestedTerms, 5);
+  pushDiagnostic(
+    diagnostics,
+    `Top deterministic option scores: ${topScoredChoices
+      .map((item) => `${item.choice.label || item.choice.value}(${item.score})`)
+      .join(', ') || 'none'}`
+  );
+
+  try {
+    const llmMatch = await requestLLMObservedOptionMatch({
+      pageTitle: document.title,
+      pageUrl: window.location.href,
+      fieldLabel: getFieldDisplayName(field),
+      requestedValues: requestedTerms,
+      observedOptions: observedOptionLabels,
+      allowMultiple: desiredCount > 1,
+    });
+
+    pushDiagnostic(diagnostics, `Constrained option match summary: ${llmMatch.summary}`);
+    if (llmMatch.reasoning) {
+      pushDiagnostic(diagnostics, `Constrained option match reasoning: ${llmMatch.reasoning}`);
+    }
+    pushDiagnostic(
+      diagnostics,
+      `Constrained option match selected options: ${llmMatch.selectedOptions.join(', ') || 'none'}`
+    );
+
+    if (llmMatch.selectedOptions.length === 0) {
+      return [];
+    }
+
+    const selectedLabelSet = new Set(llmMatch.selectedOptions.map((value) => normalizeText(value)));
+    const selectedChoices = observedChoices.filter((choice) => {
+      const optionText = normalizeText(choice.label || choice.value);
+      return selectedLabelSet.has(optionText);
+    });
+
+    return desiredCount > 1 ? selectedChoices.slice(0, desiredCount) : selectedChoices.slice(0, 1);
+  } catch (error) {
+    pushDiagnostic(
+      diagnostics,
+      `Constrained option match failed: ${error instanceof Error ? error.message : String(error)}`
+    );
+    return [];
+  }
 }
 
 async function fillCustomSelectWithTerms(
@@ -1478,7 +1809,10 @@ async function fillCustomSelectWithTerms(
 
   let optionElements = getVisibleCustomOptionElements(trigger);
   if (optionElements.length === 0) {
-    await openCustomSelect(trigger);
+    const didOpen = await openCustomSelect(trigger, diagnostics);
+    if (!didOpen) {
+      return false;
+    }
     optionElements = getVisibleCustomOptionElements(trigger);
   }
 
@@ -1493,73 +1827,117 @@ async function fillCustomSelectWithTerms(
 
   if (choices.length === 0) {
     pushDiagnostic(diagnostics, 'No visible custom options were available to match directly.');
-    return false;
-  }
-
-  if (desiredCount > 1) {
+  } else if (desiredCount > 1) {
     const bestChoices = getBestSelectChoicesForTerms(choices, normalizedTerms, desiredCount);
-    if (bestChoices.length === 0) {
-      pushDiagnostic(diagnostics, 'Direct multi-select matching found no valid custom choices.');
-      return false;
-    }
+    if (bestChoices.length > 0) {
+      let selectedCount = 0;
 
-    let selectedCount = 0;
+      for (const bestChoice of bestChoices) {
+        if (!bestChoice.element) {
+          continue;
+        }
 
-    for (const bestChoice of bestChoices) {
-      if (!bestChoice.element) {
-        continue;
-      }
+        if (bestChoice.selected) {
+          pushDiagnostic(diagnostics, `Custom option already selected: ${bestChoice.label || bestChoice.value}`);
+          selectedCount += 1;
+          continue;
+        }
 
-      if (bestChoice.selected) {
-        pushDiagnostic(diagnostics, `Custom option already selected: ${bestChoice.label || bestChoice.value}`);
+        bestChoice.element.scrollIntoView({ block: 'nearest' });
+        pushDiagnostic(diagnostics, `Clicking direct custom match: ${bestChoice.label || bestChoice.value}`);
+        clickCustomChoice(bestChoice.element);
+        await delay(60);
         selectedCount += 1;
-        continue;
       }
 
+      if (selectedCount > 0) {
+        const selectedChoices = collectVisibleCustomChoices(trigger).filter((choice) => choice.selected);
+        await closeCustomSelect(trigger);
+        pushDiagnostic(
+          diagnostics,
+          `Visible selected custom options after direct multi-select: ${summarizeChoicesForDiagnostics(selectedChoices)}`
+        );
+        return selectedChoices.length > 0 || getCurrentCustomSelectText(trigger) !== beforeValue;
+      }
+    } else {
+      pushDiagnostic(diagnostics, 'Direct multi-select matching found no valid custom choices.');
+    }
+  } else {
+    const bestChoice = getBestSelectChoiceForTerms(choices, normalizedTerms);
+    if (bestChoice?.element && canOverwriteCustomSelectValueWithTerms(trigger, bestChoice, normalizedTerms)) {
       bestChoice.element.scrollIntoView({ block: 'nearest' });
       pushDiagnostic(diagnostics, `Clicking direct custom match: ${bestChoice.label || bestChoice.value}`);
       clickCustomChoice(bestChoice.element);
-      await delay(60);
-      selectedCount += 1;
+      await delay(50);
+      const afterValue = getCurrentCustomSelectText(trigger);
+      await closeCustomSelect(trigger);
+      pushDiagnostic(diagnostics, `Trigger text after direct custom selection: ${afterValue || 'empty'}`);
+      return (
+        bestChoice.selected ||
+        afterValue === normalizeText(bestChoice.label || bestChoice.value) ||
+        (!!afterValue && afterValue !== beforeValue)
+      );
     }
 
-    if (selectedCount <= 0) {
-      return false;
-    }
-
-    const selectedChoices = collectVisibleCustomChoices(trigger).filter((choice) => choice.selected);
-    await closeCustomSelect(trigger);
-    pushDiagnostic(
-      diagnostics,
-      `Visible selected custom options after direct multi-select: ${summarizeChoicesForDiagnostics(selectedChoices)}`
-    );
-    return selectedChoices.length > 0 || getCurrentCustomSelectText(trigger) !== beforeValue;
-  }
-
-  const bestChoice = getBestSelectChoiceForTerms(choices, normalizedTerms);
-  if (
-    !bestChoice?.element ||
-    !canOverwriteCustomSelectValueWithTerms(trigger, bestChoice, normalizedTerms)
-  ) {
     pushDiagnostic(
       diagnostics,
       `No safe direct custom match was found. Best candidate: ${bestChoice ? bestChoice.label || bestChoice.value : 'none'}`
     );
+  }
+
+  const observedChoices = await gatherObservedCustomChoices(trigger, normalizedTerms, diagnostics);
+  const constrainedChoices = await resolveObservedChoicesWithLLM(
+    field,
+    normalizedTerms,
+    observedChoices,
+    desiredCount,
+    diagnostics
+  );
+
+  if (constrainedChoices.length === 0) {
+    pushDiagnostic(diagnostics, 'Constrained option matching did not yield a usable observed option.');
+    await closeCustomSelect(trigger);
     return false;
   }
 
-  bestChoice.element.scrollIntoView({ block: 'nearest' });
-  pushDiagnostic(diagnostics, `Clicking direct custom match: ${bestChoice.label || bestChoice.value}`);
-  clickCustomChoice(bestChoice.element);
-  await delay(50);
-  const afterValue = getCurrentCustomSelectText(trigger);
-  await closeCustomSelect(trigger);
-  pushDiagnostic(diagnostics, `Trigger text after direct custom selection: ${afterValue || 'empty'}`);
-  return (
-    bestChoice.selected ||
-    afterValue === normalizeText(bestChoice.label || bestChoice.value) ||
-    (!!afterValue && afterValue !== beforeValue)
+  const constrainedTerms = constrainedChoices.map((choice) => choice.label || choice.value);
+  pushDiagnostic(diagnostics, `Retrying selection with constrained observed options: ${constrainedTerms.join(', ')}`);
+
+  const selectedWithConstrainedSearch = await findAndSelectChoicesWithSearchTerms(
+    trigger,
+    constrainedTerms,
+    desiredCount,
+    diagnostics
   );
+  if (selectedWithConstrainedSearch > 0) {
+    const selectedChoices = collectVisibleCustomChoices(trigger).filter((choice) => choice.selected);
+    await closeCustomSelect(trigger);
+    pushDiagnostic(
+      diagnostics,
+      `Visible selected custom options after constrained search: ${summarizeChoicesForDiagnostics(selectedChoices)}`
+    );
+    return selectedChoices.length > 0 || getCurrentCustomSelectText(trigger) !== beforeValue;
+  }
+
+  const selectedWithConstrainedScroll = await findAndSelectChoicesByScrollingTerms(
+    trigger,
+    constrainedTerms,
+    desiredCount,
+    diagnostics
+  );
+  if (selectedWithConstrainedScroll > 0) {
+    const selectedChoices = collectVisibleCustomChoices(trigger).filter((choice) => choice.selected);
+    await closeCustomSelect(trigger);
+    pushDiagnostic(
+      diagnostics,
+      `Visible selected custom options after constrained scroll search: ${summarizeChoicesForDiagnostics(selectedChoices)}`
+    );
+    return selectedChoices.length > 0 || getCurrentCustomSelectText(trigger) !== beforeValue;
+  }
+
+  await closeCustomSelect(trigger);
+  pushDiagnostic(diagnostics, 'Failed to click the constrained observed option on the page.');
+  return false;
 }
 
 async function fillCustomSelect(field: FormField, profile: SelectedWebsiteProfile): Promise<boolean> {

@@ -5,7 +5,11 @@
 import { injectPageController, handleTabControl } from './tabs';
 import { startAuthFlow } from './auth';
 import { fetchWebsites, fetchImageAsDataUrl } from './api';
-import { planAutofillFieldsWithLLM, planPageAutofillActionsWithLLM } from './ai-autofill';
+import {
+  matchObservedOptionsWithLLM,
+  planAutofillFieldsWithLLM,
+  planPageAutofillActionsWithLLM,
+} from './ai-autofill';
 import { setupContextMenu, removeContextMenu } from './context-menu';
 import { handleTabControlMessage as handleAgentTabControl } from '../agent/TabsController.background';
 import { handlePageControlMessage as handleAgentPageControl } from '../agent/RemotePageController.background';
@@ -260,6 +264,32 @@ function handleAIPageAutofillActions(
   return true;
 }
 
+function handleAIObservedOptionMatch(
+  message: { payload?: Parameters<typeof matchObservedOptionsWithLLM>[0] },
+  sendResponse: (response?: unknown) => void
+): boolean {
+  if (!message?.payload) {
+    sendResponse({
+      success: false,
+      error: 'Missing observed option match payload.',
+    });
+    return false;
+  }
+
+  matchObservedOptionsWithLLM(message.payload)
+    .then((result) => {
+      sendResponse({ success: true, result });
+    })
+    .catch((error: unknown) => {
+      sendResponse({
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+
+  return true;
+}
+
 /**
  * Main message router
  */
@@ -314,6 +344,9 @@ export function setupMessageRouter(): void {
 
         case 'ai:page-autofill-actions':
           return handleAIPageAutofillActions(message, sendResponse);
+
+        case 'ai:observed-option-match':
+          return handleAIObservedOptionMatch(message, sendResponse);
 
         default:
           console.warn('[Background] Unknown message type:', type);

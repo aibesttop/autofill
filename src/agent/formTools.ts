@@ -166,6 +166,9 @@ function formatOrderedAutofillSummary(tab: ToolTabContext, result: OrderedAutofi
     result.message,
     `Completed ${result.completedCount} of ${result.totalCount} planned steps.`,
     result.filledFields.length > 0 ? `Verified fields: ${result.filledFields.join(', ')}.` : null,
+    result.status === 'blocked'
+      ? 'Execution is blocked on the current numbered field. Do not continue to later fields until this blocker is resolved.'
+      : null,
   ]
     .filter(Boolean)
     .join('\n');

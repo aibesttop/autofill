@@ -1,7 +1,16 @@
 import styled from '@emotion/styled';
 import { css } from '@emotion/react';
 
-export const Container = styled.div`max-width: 800px; margin: 0 auto;`;
+export const const Container = styled.div`
+  max-width: 100%;
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  background: oklch(0.98 0.01 240);
+  min-height: 100vh;
+  
+  @media (prefers-color-scheme: dark) {
+    background: oklch(0.12 0.01 240);
+  }
+`;
 export const Header = styled.div`margin-bottom: 24px;`;
 export const Title = styled.h2`font-size: 24px; font-weight: 700; color: #1a202c; margin: 0 0 8px 0;`;
 export const Description = styled.p`font-size: 14px; color: #718096; margin: 0;`;

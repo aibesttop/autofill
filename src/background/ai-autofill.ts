@@ -5,6 +5,8 @@ import { normalizeBaseURLForModel } from '../agent/constants';
 import type {
   LLMFieldMappingRequest,
   LLMFieldMappingResult,
+  LLMObservedOptionMatchRequest,
+  LLMObservedOptionMatchResult,
   LLMPageAutofillPlanRequest,
   LLMPageAutofillPlanResult,
 } from '../content/types';
@@ -61,6 +63,12 @@ const PAGE_ACTION_STEP_SCHEMA = z
 const PAGE_ACTION_PLAN_RESULT_SCHEMA = z.object({
   summary: z.string().trim().min(1).max(280),
   steps: z.array(PAGE_ACTION_STEP_SCHEMA).max(30),
+});
+
+const OBSERVED_OPTION_MATCH_RESULT_SCHEMA = z.object({
+  summary: z.string().trim().min(1).max(280),
+  selectedOptions: z.array(z.string().trim().min(1).max(240)).max(8),
+  reasoning: z.string().trim().max(240).optional(),
 });
 
 interface ChatCompletionResponse {
@@ -407,6 +415,28 @@ function buildPageActionPrompt(request: LLMPageAutofillPlanRequest): string {
   ].join('\n');
 }
 
+function buildObservedOptionMatchPrompt(request: LLMObservedOptionMatchRequest): string {
+  return [
+    'Map the requested category/tag values to the observed page options.',
+    'Return exactly one JSON object with this shape:',
+    '{"summary":"short text","selectedOptions":["Automation"],"reasoning":"brief reason"}',
+    'Rules:',
+    '- You may only return option strings that appear exactly in observedOptions.',
+    '- Never invent a new option and never paraphrase an observed option.',
+    '- If there is no high-confidence match, return an empty selectedOptions array.',
+    '- Prefer semantically closest business/listing categories.',
+    '- Keep the response deterministic and conservative.',
+    '- Do not wrap the JSON in markdown.',
+    '',
+    `Page title: ${request.pageTitle || 'Untitled page'}`,
+    `Page URL: ${request.pageUrl}`,
+    `Field label: ${request.fieldLabel}`,
+    `Allow multiple: ${request.allowMultiple ? 'yes' : 'no'}`,
+    `Requested values: ${JSON.stringify(request.requestedValues)}`,
+    `Observed options: ${JSON.stringify(request.observedOptions)}`,
+  ].join('\n');
+}
+
 export async function planAutofillFieldsWithLLM(
   request: LLMFieldMappingRequest
 ): Promise<LLMFieldMappingResult> {
@@ -421,4 +451,12 @@ export async function planPageAutofillActionsWithLLM(
   const content = await generateStructuredContent(buildPageActionPrompt(request));
   const jsonText = extractJSONObject(content);
   return PAGE_ACTION_PLAN_RESULT_SCHEMA.parse(JSON.parse(jsonText));
+}
+
+export async function matchObservedOptionsWithLLM(
+  request: LLMObservedOptionMatchRequest
+): Promise<LLMObservedOptionMatchResult> {
+  const content = await generateStructuredContent(buildObservedOptionMatchPrompt(request));
+  const jsonText = extractJSONObject(content);
+  return OBSERVED_OPTION_MATCH_RESULT_SCHEMA.parse(JSON.parse(jsonText));
 }
