@@ -1,7 +1,7 @@
 import styled from '@emotion/styled';
 import { css } from '@emotion/react';
 
-export const const Container = styled.div`
+export const Container = styled.div`
   max-width: 100%;
   font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
   background: oklch(0.98 0.01 240);

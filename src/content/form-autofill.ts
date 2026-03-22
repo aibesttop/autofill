@@ -928,11 +928,42 @@ function canOverwriteCustomSelectValueWithTerms(
   return nextScore > currentScore;
 }
 
+function getElementCenter(element: HTMLElement): { x: number; y: number } {
+  const rect = element.getBoundingClientRect();
+  return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+}
+
+function buildMouseEventInit(element: HTMLElement): MouseEventInit {
+  const { x, y } = getElementCenter(element);
+  return {
+    bubbles: true,
+    cancelable: true,
+    view: window,
+    clientX: x,
+    clientY: y,
+    screenX: x + window.screenX,
+    screenY: y + window.screenY,
+    button: 0,
+    buttons: 1,
+  };
+}
+
 function dispatchMouseSequence(element: HTMLElement): void {
-  element.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true }));
-  element.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-  element.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
-  element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  const init = buildMouseEventInit(element);
+
+  element.dispatchEvent(new PointerEvent('pointerover', { ...init, pointerId: 1 }));
+  element.dispatchEvent(new PointerEvent('pointerenter', { ...init, pointerId: 1, bubbles: false }));
+  element.dispatchEvent(new MouseEvent('mouseenter', { ...init, bubbles: false }));
+  element.dispatchEvent(new MouseEvent('mouseover', init));
+
+  element.dispatchEvent(new PointerEvent('pointerdown', { ...init, pointerId: 1 }));
+  element.dispatchEvent(new MouseEvent('mousedown', init));
+
+  element.focus();
+
+  element.dispatchEvent(new PointerEvent('pointerup', { ...init, pointerId: 1, buttons: 0 }));
+  element.dispatchEvent(new MouseEvent('mouseup', { ...init, buttons: 0 }));
+  element.dispatchEvent(new MouseEvent('click', { ...init, buttons: 0 }));
 }
 
 function isSearchLikeElement(element: HTMLElement): boolean {
@@ -1432,7 +1463,7 @@ async function openCustomSelect(element: HTMLElement, diagnostics?: string[]): P
   const attemptOpen = async (
     label: string,
     action: () => void | Promise<void>,
-    waitMs = 100
+    waitMs = 120
   ): Promise<boolean> => {
     await action();
     await delay(waitMs);
@@ -1441,8 +1472,13 @@ async function openCustomSelect(element: HTMLElement, diagnostics?: string[]): P
     return opened;
   };
 
+  // Scroll into view first so the element is visible and clickable
+  element.scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'nearest' });
+  await delay(60);
+
   element.focus();
 
+  // Strategy 1: Full pointer/mouse sequence (enhanced with coordinates, focus, hover)
   if (
     await attemptOpen('Open attempt via pointer sequence', async () => {
       dispatchMouseSequence(element);
@@ -1451,6 +1487,7 @@ async function openCustomSelect(element: HTMLElement, diagnostics?: string[]): P
     return true;
   }
 
+  // Strategy 2: Direct element.click()
   if (
     await attemptOpen('Open attempt via element.click()', async () => {
       element.click();
@@ -1459,6 +1496,21 @@ async function openCustomSelect(element: HTMLElement, diagnostics?: string[]): P
     return true;
   }
 
+  // Strategy 3: Mousedown + focus + delayed mouseup/click (for frameworks that listen to mousedown)
+  if (
+    await attemptOpen('Open attempt via mousedown-focus-delayed-click', async () => {
+      const init = buildMouseEventInit(element);
+      element.dispatchEvent(new MouseEvent('mousedown', init));
+      element.focus();
+      await delay(50);
+      element.dispatchEvent(new MouseEvent('mouseup', { ...init, buttons: 0 }));
+      element.dispatchEvent(new MouseEvent('click', { ...init, buttons: 0 }));
+    })
+  ) {
+    return true;
+  }
+
+  // Strategy 4: Enter key
   if (
     await attemptOpen('Open attempt via Enter key', async () => {
       element.dispatchEvent(
@@ -1472,6 +1524,7 @@ async function openCustomSelect(element: HTMLElement, diagnostics?: string[]): P
     return true;
   }
 
+  // Strategy 5: ArrowDown key
   if (
     await attemptOpen('Open attempt via ArrowDown key', async () => {
       element.dispatchEvent(
@@ -1485,6 +1538,7 @@ async function openCustomSelect(element: HTMLElement, diagnostics?: string[]): P
     return true;
   }
 
+  // Strategy 6: Space key
   if (
     await attemptOpen('Open attempt via Space key', async () => {
       element.dispatchEvent(
@@ -1498,14 +1552,35 @@ async function openCustomSelect(element: HTMLElement, diagnostics?: string[]): P
     return true;
   }
 
+  // Strategy 7: Nested button/svg trigger
   const nestedButton = element.querySelector<HTMLElement>('button, [role="button"], svg');
   if (
     nestedButton &&
     isVisibleElement(nestedButton) &&
     await attemptOpen('Open attempt via nested trigger', async () => {
+      nestedButton.scrollIntoView({ behavior: 'auto', block: 'nearest' });
       nestedButton.focus();
       dispatchMouseSequence(nestedButton);
       nestedButton.click();
+    })
+  ) {
+    return true;
+  }
+
+  // Strategy 8: Find and click any clickable descendant with pointer cursor
+  const clickableDescendant = Array.from(
+    element.querySelectorAll<HTMLElement>('*')
+  ).find((child) => {
+    if (!isVisibleElement(child)) return false;
+    const cursor = window.getComputedStyle(child).cursor;
+    return cursor === 'pointer' && child !== nestedButton;
+  });
+  if (
+    clickableDescendant &&
+    await attemptOpen('Open attempt via clickable descendant', async () => {
+      clickableDescendant.focus();
+      dispatchMouseSequence(clickableDescendant);
+      clickableDescendant.click();
     })
   ) {
     return true;
@@ -1953,6 +2028,9 @@ function clickCustomChoice(element: HTMLElement): void {
   const nestedInput = element.querySelector<HTMLInputElement>('input[type="checkbox"], input[type="radio"]');
   const label = element.closest('label') || element.querySelector('label');
 
+  // Ensure the option is visible before clicking
+  element.scrollIntoView({ behavior: 'auto', block: 'nearest' });
+
   if (label instanceof HTMLElement) {
     dispatchMouseSequence(label);
     label.click();
@@ -1961,6 +2039,7 @@ function clickCustomChoice(element: HTMLElement): void {
 
   if (nestedInput) {
     nestedInput.focus();
+    dispatchMouseSequence(nestedInput);
     nestedInput.click();
     return;
   }
