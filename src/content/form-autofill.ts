@@ -122,6 +122,13 @@ const CUSTOM_SELECT_CONTAINER_SELECTORS = [
   '[data-slot="dropdown-menu-content"]',
   '[data-state="open"]',
   '[cmdk-list]',
+  // Common UI library selectors
+  '[data-headless-ui-state]',
+  '.ant-select-dropdown',
+  '.select2-dropdown',
+  '.choices__list--dropdown',
+  '[data-floating-ui-portal]',
+  '[data-tippy-root]',
 ] as const;
 
 const LOOSE_CUSTOM_SELECT_OPTION_SELECTORS = [
@@ -192,6 +199,58 @@ function isEditorToolbarContainer(container: HTMLElement): boolean {
 
 function normalizeText(value: string | undefined): string {
   return (value || '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+// Track popup containers discovered via snapshot-based detection (for portals and non-ARIA dropdowns)
+const _discoveredPopups = new WeakMap<HTMLElement, HTMLElement>();
+
+function snapshotVisiblePopupCandidates(): Set<HTMLElement> {
+  const selector = [...CUSTOM_SELECT_CONTAINER_SELECTORS, 'div', 'ul'].join(', ');
+  return new Set(
+    Array.from(document.querySelectorAll<HTMLElement>(selector)).filter(isVisibleElement)
+  );
+}
+
+function discoverNewPopupAfterAction(
+  beforeSnapshot: Set<HTMLElement>,
+  trigger: HTMLElement
+): HTMLElement | null {
+  const selector = [...CUSTOM_SELECT_CONTAINER_SELECTORS, 'div', 'ul'].join(', ');
+  const candidates = Array.from(document.querySelectorAll<HTMLElement>(selector))
+    .filter((el) => {
+      if (beforeSnapshot.has(el)) return false;
+      if (!isVisibleElement(el)) return false;
+      if (el === trigger || el.contains(trigger) || trigger.contains(el)) return false;
+      if (isEditorToolbarContainer(el)) return false;
+
+      const rect = el.getBoundingClientRect();
+      if (rect.width < 80 || rect.height < 30) return false;
+
+      // Must look like a popup: positioned/layered, has role, or matches known selectors
+      const style = window.getComputedStyle(el);
+      const isPositioned = style.position === 'absolute' || style.position === 'fixed';
+      const hasZIndex = parseInt(style.zIndex || '0', 10) > 0;
+      const hasPopupRole = el.matches(CUSTOM_SELECT_CONTAINER_SELECTORS.join(', '));
+
+      // Must have interactive content (options, checkboxes, or search)
+      const hasInteractiveContent =
+        el.querySelectorAll(
+          [...CUSTOM_SELECT_OPTION_SELECTORS, ...LOOSE_CUSTOM_SELECT_OPTION_SELECTORS].join(', ')
+        ).length >= 2 ||
+        !!el.querySelector('input[type="checkbox"], [role="checkbox"]') ||
+        !!getSearchInput(el);
+
+      return (isPositioned || hasZIndex || hasPopupRole) && hasInteractiveContent;
+    });
+
+  if (candidates.length === 0) return null;
+
+  // Prefer closest to trigger
+  candidates.sort(
+    (a, b) => getPopupContainerDistance(trigger, a) - getPopupContainerDistance(trigger, b)
+  );
+
+  return candidates[0];
 }
 
 function containsAny(text: string, keywords: string[]): boolean {
@@ -1291,7 +1350,18 @@ function getPopupContainers(element: HTMLElement): HTMLElement[] {
     return knownContainers;
   }
 
-  return getNearbyPopupContainers(element);
+  const nearbyContainers = getNearbyPopupContainers(element);
+  if (nearbyContainers.length > 0) {
+    return nearbyContainers;
+  }
+
+  // Fallback: use snapshot-discovered popup container (handles portals and non-ARIA dropdowns)
+  const discovered = _discoveredPopups.get(element);
+  if (discovered && isVisibleElement(discovered) && !isEditorToolbarContainer(discovered)) {
+    return [discovered];
+  }
+
+  return [];
 }
 
 function getSelectedCustomChoiceLabels(trigger: HTMLElement): string[] {
@@ -1524,16 +1594,34 @@ async function openCustomSelect(element: HTMLElement, diagnostics?: string[]): P
     return true;
   }
 
+  // Snapshot visible popup candidates before any click attempts,
+  // so we can detect newly-appeared containers (portals, non-ARIA dropdowns)
+  const beforeSnapshot = snapshotVisiblePopupCandidates();
+
   const attemptOpen = async (
     label: string,
     action: () => void | Promise<void>,
-    waitMs = 120
+    waitMs = 160
   ): Promise<boolean> => {
     await action();
     await delay(waitMs);
-    const opened = isCustomSelectOpen(element);
-    pushDiagnostic(diagnostics, `${label}: ${opened ? 'opened' : 'not opened'}`);
-    return opened;
+
+    // Standard detection
+    if (isCustomSelectOpen(element)) {
+      pushDiagnostic(diagnostics, `${label}: opened`);
+      return true;
+    }
+
+    // Fallback: detect newly-appeared popup containers via snapshot diff
+    const newPopup = discoverNewPopupAfterAction(beforeSnapshot, element);
+    if (newPopup) {
+      _discoveredPopups.set(element, newPopup);
+      pushDiagnostic(diagnostics, `${label}: opened (discovered new popup via snapshot)`);
+      return true;
+    }
+
+    pushDiagnostic(diagnostics, `${label}: not opened`);
+    return false;
   };
 
   // Scroll into view first so the element is visible and clickable
