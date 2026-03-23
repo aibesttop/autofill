@@ -144,6 +144,52 @@ const POPUP_DISCOVERY_SELECTORS = [
   ...CUSTOM_SELECT_CONTAINER_SELECTORS,
 ] as const;
 
+const EDITOR_TOOLBAR_TERMS = new Set([
+  'heading', 'bold', 'italic', 'strikethrough', 'code', 'quote',
+  'generic list', 'numbered list', 'create link', 'toggle preview',
+  'markdown guide', 'underline', 'unordered list', 'ordered list',
+  'insert image', 'insert table', 'undo', 'redo', 'preview',
+  'fullscreen', 'side by side', 'clean block',
+]);
+
+const EDITOR_CONTAINER_CLASS_PATTERNS = [
+  'mde', 'md-editor', 'markdown', 'editor-toolbar', 'toolbar',
+  'easymde', 'codemirror', 'prosemirror', 'tiptap', 'ql-toolbar',
+  'toastui-editor', 'bytemd', 'milkdown',
+];
+
+function isEditorToolbarContainer(container: HTMLElement): boolean {
+  // Check container role
+  if (container.getAttribute('role') === 'toolbar') {
+    return true;
+  }
+
+  // Check class names on container and its ancestors (up to 3 levels)
+  let el: HTMLElement | null = container;
+  for (let depth = 0; el && depth < 4; depth++) {
+    const className = (el.className || '').toLowerCase();
+    if (EDITOR_CONTAINER_CLASS_PATTERNS.some((pattern) => className.includes(pattern))) {
+      return true;
+    }
+    el = el.parentElement;
+  }
+
+  // Heuristic: if >50% of the child text labels match known editor toolbar terms,
+  // this is very likely an editor toolbar, not a select dropdown.
+  const childTexts = Array.from(container.querySelectorAll<HTMLElement>('button, [role="button"], li, a'))
+    .map((child) => normalizeText(child.textContent || child.getAttribute('aria-label') || ''))
+    .filter((text) => text.length > 0 && text.length < 30);
+
+  if (childTexts.length >= 4) {
+    const matchCount = childTexts.filter((text) => EDITOR_TOOLBAR_TERMS.has(text)).length;
+    if (matchCount / childTexts.length >= 0.5) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function normalizeText(value: string | undefined): string {
   return (value || '').toLowerCase().replace(/\s+/g, ' ').trim();
 }
@@ -1092,6 +1138,11 @@ function getPopupContainerDistance(trigger: HTMLElement, candidate: HTMLElement)
 }
 
 function scorePopupContainer(trigger: HTMLElement, candidate: HTMLElement): number {
+  // Editor toolbars should never be treated as select dropdowns
+  if (isEditorToolbarContainer(candidate)) {
+    return -1;
+  }
+
   const role = candidate.getAttribute('role')?.toLowerCase();
   const hasSearch = !!getSearchInput(candidate);
   const hasCheckboxes = !!candidate.querySelector('input[type="checkbox"], [role="checkbox"]');
@@ -1167,6 +1218,10 @@ function getNearbyPopupContainers(trigger: HTMLElement): HTMLElement[] {
         return false;
       }
 
+      if (isEditorToolbarContainer(candidate)) {
+        return false;
+      }
+
       const hasSearch = !!getSearchInput(candidate);
       const hasCheckboxes = !!candidate.querySelector('input[type="checkbox"], [role="checkbox"]');
       const hasChoiceRows =
@@ -1209,7 +1264,11 @@ function getKnownPopupContainersNearTrigger(trigger: HTMLElement): HTMLElement[]
 
       const overlapsHorizontally = rect.left <= triggerRect.right + 64 && rect.right >= triggerRect.left - 64;
       const isNearbyVertically = rect.top <= triggerRect.bottom + 360 && rect.bottom >= triggerRect.top - 32;
-      return overlapsHorizontally && isNearbyVertically;
+      if (!overlapsHorizontally || !isNearbyVertically) {
+        return false;
+      }
+
+      return !isEditorToolbarContainer(candidate);
     })
     .sort((left, right) => {
       const scoreDelta = scorePopupContainer(trigger, right) - scorePopupContainer(trigger, left);
