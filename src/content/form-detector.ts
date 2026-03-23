@@ -71,6 +71,11 @@ export class FormFieldDetector {
   }
 
   private isValidFormField(element: HTMLElement): boolean {
+    // Skip extension's own injected UI elements
+    if (element.closest('[data-autofill-extension-ui], [data-page-agent-not-interactive]')) {
+      return false;
+    }
+
     if (element instanceof HTMLSelectElement) {
       if (this.isHidden(element)) return false;
       if (element.disabled) return false;
