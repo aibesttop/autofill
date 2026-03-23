@@ -1364,6 +1364,9 @@ async function closeCustomSelect(trigger: HTMLElement): Promise<void> {
     trigger.click();
     await delay(80);
   }
+
+  // Clean up discovered popup reference when closing
+  _discoveredPopups.delete(trigger);
 }
 
 function getSearchInput(container: HTMLElement): HTMLInputElement | HTMLTextAreaElement | null {
