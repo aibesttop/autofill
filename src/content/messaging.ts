@@ -11,12 +11,15 @@ import {
   orderedAutofillFromSelectedWebsite,
   selectFormFieldOptions,
   setFormFieldValue,
+  submitCurrentForm,
 } from './form-autofill';
 import type {
   AutofillResult,
   DetectedFormField,
   FormDetectionResult,
   FormFillPayload,
+  FormSubmitResult,
+  OrderedFormFillPayload,
   OrderedAutofillResult,
   FormSetFieldValuePayload,
   FormSetFieldValueResult,
@@ -48,8 +51,10 @@ export class ContentMessageHandler {
           return this.handleFormDetect();
         case 'form:fill':
           return this.handleFormFill(payload);
+        case 'form:submit':
+          return this.handleFormSubmit();
         case 'form:ordered-fill':
-          return this.handleOrderedFormFill();
+          return this.handleOrderedFormFill(payload);
         case 'form:set-field-value':
           return this.handleFormSetFieldValue(payload);
         case 'form:select-options':
@@ -162,8 +167,15 @@ export class ContentMessageHandler {
     return { success: true, result };
   }
 
-  private async handleOrderedFormFill(): Promise<{ success: true; result: OrderedAutofillResult }> {
-    const result = await orderedAutofillFromSelectedWebsite(document.activeElement);
+  private async handleOrderedFormFill(
+    payload?: OrderedFormFillPayload
+  ): Promise<{ success: true; result: OrderedAutofillResult }> {
+    const result = await orderedAutofillFromSelectedWebsite(document.activeElement, payload);
+    return { success: true, result };
+  }
+
+  private async handleFormSubmit(): Promise<{ success: true; result: FormSubmitResult }> {
+    const result = await submitCurrentForm(document.activeElement);
     return { success: true, result };
   }
 
@@ -182,7 +194,9 @@ export class ContentMessageHandler {
   }
 
   private countSubmitButtons(): number {
-    const candidates = document.querySelectorAll('button, input[type="submit"], [role="button"]');
+    const candidates = document.querySelectorAll(
+      'button, input[type="submit"], input[type="button"], [role="button"], a[href]'
+    );
     let count = 0;
 
     candidates.forEach((element) => {
@@ -200,7 +214,7 @@ export class ContentMessageHandler {
         return true;
       }
 
-      return /submit|apply|continue|next|save|send/i.test(element.value || '');
+      return /submit|post|comment|reply|apply|continue|next|save|send|publish/i.test(element.value || '');
     }
 
     if (!(element instanceof HTMLElement)) {
@@ -221,7 +235,7 @@ export class ContentMessageHandler {
       .join(' ')
       .toLowerCase();
 
-    return /submit|apply|continue|next|register|join|save|send/i.test(text);
+    return /submit|post|comment|reply|apply|continue|next|register|join|save|send|publish/i.test(text);
   }
 }
 

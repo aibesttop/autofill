@@ -926,6 +926,10 @@ export const AgentPanel: React.FC = () => {
         categories: selectedWebsiteSnapshot.categories,
         description: selectedWebsiteSnapshot.description,
         tags: selectedWebsiteSnapshot.tags,
+        contactName: selectedWebsiteSnapshot.contactName,
+        contactEmail: selectedWebsiteSnapshot.contactEmail,
+        submissionWebsiteUrl: selectedWebsiteSnapshot.submissionWebsiteUrl,
+        submissionComment: selectedWebsiteSnapshot.submissionComment,
       }
     : null;
 

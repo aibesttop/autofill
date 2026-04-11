@@ -19,6 +19,10 @@ export interface WebsiteSnapshot {
   categories?: string[];
   description?: string;
   tags?: string[];
+  contactName?: string;
+  contactEmail?: string;
+  submissionWebsiteUrl?: string;
+  submissionComment?: string;
   status?: 'pending' | 'active' | 'error';
 }
 
@@ -35,6 +39,7 @@ interface WorkspaceStorageState {
   batchState: BatchWorkspaceState;
   selectedWebsiteId: string | null;
   selectedWebsiteSnapshot: WebsiteSnapshot | null;
+  websiteProfileOverrides: Record<string, WebsiteProfileOverride>;
 }
 
 interface AutomationWorkspaceHookState extends WorkspaceStorageState {
@@ -61,6 +66,13 @@ export interface AgentTaskRecordInput {
   url?: string;
   createdAt?: number;
   completedAt?: number;
+}
+
+export interface WebsiteProfileOverride {
+  contactName?: string;
+  contactEmail?: string;
+  submissionWebsiteUrl?: string;
+  submissionComment?: string;
 }
 
 const DEFAULT_BATCH_STATE: BatchWorkspaceState = {
@@ -197,8 +209,56 @@ function sanitizeWebsiteSnapshot(value: unknown): WebsiteSnapshot | null {
     categories,
     description: typeof value.description === 'string' ? value.description : undefined,
     tags,
+    contactName: typeof value.contactName === 'string' ? value.contactName : undefined,
+    contactEmail: typeof value.contactEmail === 'string' ? value.contactEmail : undefined,
+    submissionWebsiteUrl:
+      typeof value.submissionWebsiteUrl === 'string' ? value.submissionWebsiteUrl : undefined,
+    submissionComment:
+      typeof value.submissionComment === 'string' ? value.submissionComment : undefined,
     status: value.status as WebsiteSnapshot['status'],
   };
+}
+
+function sanitizeWebsiteProfileOverride(value: unknown): WebsiteProfileOverride {
+  if (!isPlainObject(value)) {
+    return {};
+  }
+
+  return {
+    contactName: typeof value.contactName === 'string' ? value.contactName : undefined,
+    contactEmail: typeof value.contactEmail === 'string' ? value.contactEmail : undefined,
+    submissionWebsiteUrl:
+      typeof value.submissionWebsiteUrl === 'string' ? value.submissionWebsiteUrl : undefined,
+    submissionComment:
+      typeof value.submissionComment === 'string' ? value.submissionComment : undefined,
+  };
+}
+
+function sanitizeWebsiteProfileOverrides(value: unknown): Record<string, WebsiteProfileOverride> {
+  if (!isPlainObject(value)) {
+    return {};
+  }
+
+  return Object.entries(value).reduce<Record<string, WebsiteProfileOverride>>((result, [id, item]) => {
+    const override = sanitizeWebsiteProfileOverride(item);
+    if (
+      override.contactName ||
+      override.contactEmail ||
+      override.submissionWebsiteUrl ||
+      override.submissionComment
+    ) {
+      result[id] = override;
+    }
+    return result;
+  }, {});
+}
+
+function applyWebsiteOverride(
+  snapshot: WebsiteSnapshot,
+  overrides: Record<string, WebsiteProfileOverride>
+): WebsiteSnapshot {
+  const override = overrides[snapshot.id];
+  return override ? { ...snapshot, ...override } : snapshot;
 }
 
 function normalizeBatchState(value: unknown): BatchWorkspaceState {
@@ -423,6 +483,10 @@ function toWebsiteSnapshot(website: Website): WebsiteSnapshot {
     categories: website.categories,
     description: website.description,
     tags: website.tags,
+    contactName: website.contactName,
+    contactEmail: website.contactEmail,
+    submissionWebsiteUrl: website.submissionWebsiteUrl,
+    submissionComment: website.submissionComment,
     status: website.status,
   };
 }
@@ -436,29 +500,41 @@ async function readWorkspaceStorage(): Promise<WorkspaceStorageState> {
     STORAGE_KEYS.BATCH_STATE,
     STORAGE_KEYS.SELECTED_WEBSITE_ID,
     STORAGE_KEYS.SELECTED_WEBSITE_SNAPSHOT,
+    STORAGE_KEYS.WEBSITE_PROFILE_OVERRIDES,
   ]);
 
+  const websiteProfileOverrides = sanitizeWebsiteProfileOverrides(
+    result[STORAGE_KEYS.WEBSITE_PROFILE_OVERRIDES]
+  );
   const selectedWebsiteSnapshot = sanitizeWebsiteSnapshot(
     result[STORAGE_KEYS.SELECTED_WEBSITE_SNAPSHOT]
   );
+  const selectedWebsiteSnapshotWithOverride = selectedWebsiteSnapshot
+    ? applyWebsiteOverride(selectedWebsiteSnapshot, websiteProfileOverrides)
+    : null;
   const selectedWebsiteId =
     typeof result[STORAGE_KEYS.SELECTED_WEBSITE_ID] === 'string'
       ? result[STORAGE_KEYS.SELECTED_WEBSITE_ID]
       : null;
 
   if (LOCAL_TEST_MODE && !selectedWebsiteSnapshot) {
-    const fallbackSnapshot = toWebsiteSnapshot(LOCAL_TEST_DEFAULT_WEBSITE);
+    const fallbackSnapshot = applyWebsiteOverride(
+      toWebsiteSnapshot(LOCAL_TEST_DEFAULT_WEBSITE),
+      websiteProfileOverrides
+    );
     return {
       batchState: normalizeBatchState(result[STORAGE_KEYS.BATCH_STATE]),
       selectedWebsiteId: fallbackSnapshot.id,
       selectedWebsiteSnapshot: fallbackSnapshot,
+      websiteProfileOverrides,
     };
   }
 
   return {
     batchState: normalizeBatchState(result[STORAGE_KEYS.BATCH_STATE]),
     selectedWebsiteId,
-    selectedWebsiteSnapshot,
+    selectedWebsiteSnapshot: selectedWebsiteSnapshotWithOverride,
+    websiteProfileOverrides,
   };
 }
 
@@ -556,6 +632,7 @@ export function useAutomationWorkspace() {
     batchState: DEFAULT_BATCH_STATE,
     selectedWebsiteId: null,
     selectedWebsiteSnapshot: null,
+    websiteProfileOverrides: {},
     isLoading: true,
     isRunningBatch: false,
     error: null,
@@ -620,6 +697,13 @@ export function useAutomationWorkspace() {
         hasChanges = true;
       }
 
+      if (changes[STORAGE_KEYS.WEBSITE_PROFILE_OVERRIDES]) {
+        nextState.websiteProfileOverrides = sanitizeWebsiteProfileOverrides(
+          changes[STORAGE_KEYS.WEBSITE_PROFILE_OVERRIDES].newValue
+        );
+        hasChanges = true;
+      }
+
       if (hasChanges) {
         setState((prev) => ({
           ...prev,
@@ -678,7 +762,10 @@ export function useAutomationWorkspace() {
   };
 
   const selectWebsite = async (website: Website | WebsiteSnapshot | null) => {
-    const snapshot = website ? (isWebsiteSnapshot(website) ? website : toWebsiteSnapshot(website)) : null;
+    const baseSnapshot = website ? (isWebsiteSnapshot(website) ? website : toWebsiteSnapshot(website)) : null;
+    const snapshot = baseSnapshot
+      ? applyWebsiteOverride(baseSnapshot, state.websiteProfileOverrides)
+      : null;
 
     setState((prev) => ({
       ...prev,
@@ -688,6 +775,35 @@ export function useAutomationWorkspace() {
     }));
 
     await persistSelectedWebsite(snapshot);
+  };
+
+  const saveWebsiteProfileOverride = async (
+    websiteId: string,
+    override: WebsiteProfileOverride
+  ) => {
+    const nextOverrides = {
+      ...state.websiteProfileOverrides,
+      [websiteId]: sanitizeWebsiteProfileOverride(override),
+    };
+    const selectedWebsiteSnapshot =
+      state.selectedWebsiteSnapshot?.id === websiteId
+        ? { ...state.selectedWebsiteSnapshot, ...nextOverrides[websiteId] }
+        : state.selectedWebsiteSnapshot;
+
+    setState((prev) => ({
+      ...prev,
+      websiteProfileOverrides: nextOverrides,
+      selectedWebsiteSnapshot,
+      error: null,
+    }));
+
+    await chrome.storage.local.set({
+      [STORAGE_KEYS.WEBSITE_PROFILE_OVERRIDES]: nextOverrides,
+    });
+
+    if (selectedWebsiteSnapshot?.id === websiteId) {
+      await persistSelectedWebsite(selectedWebsiteSnapshot);
+    }
   };
 
   const queueBatch = async (draftInput?: string): Promise<QueueBatchResult> => {
@@ -1123,6 +1239,7 @@ export function useAutomationWorkspace() {
     batchState: state.batchState,
     selectedWebsiteId: state.selectedWebsiteId,
     selectedWebsiteSnapshot: state.selectedWebsiteSnapshot,
+    websiteProfileOverrides: state.websiteProfileOverrides,
     isLoading: state.isLoading,
     isRunningBatch: state.isRunningBatch,
     error: state.error,
@@ -1130,6 +1247,7 @@ export function useAutomationWorkspace() {
     setDraftUrls,
     setAgentTaskTemplate,
     selectWebsite,
+    saveWebsiteProfileOverride,
     queueBatch,
     runBatch,
     runBatchWithAgent,

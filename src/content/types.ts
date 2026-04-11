@@ -11,6 +11,7 @@ export type ContentMessageType =
   | 'floatingButton:toggle'
   | 'form:detect'
   | 'form:fill'
+  | 'form:submit'
   | 'form:ordered-fill'
   | 'form:set-field-value'
   | 'form:select-options';
@@ -30,6 +31,10 @@ export interface FormSelectOptionsPayload {
 export interface FormSetFieldValuePayload {
   fieldHint: string;
   value: string;
+}
+
+export interface OrderedFormFillPayload {
+  submitAfterFill?: boolean;
 }
 
 export interface PluginState {
@@ -119,6 +124,14 @@ export interface OrderedAutofillResult {
   totalCount: number;
   filledFields: string[];
   steps: OrderedAutofillStepResult[];
+  submitResult?: FormSubmitResult;
+}
+
+export interface FormSubmitResult {
+  status: 'submitted' | 'button_not_found' | 'blocked';
+  buttonLabel?: string;
+  message: string;
+  diagnostics: string[];
 }
 
 export interface AutofillOptionSummary {
@@ -150,6 +163,10 @@ export interface AutofillProfileSummary {
   categories?: string[];
   description?: string;
   tags?: string[];
+  contactName?: string;
+  contactEmail?: string;
+  submissionWebsiteUrl?: string;
+  submissionComment?: string;
 }
 
 export interface LLMFieldMappingRequest {

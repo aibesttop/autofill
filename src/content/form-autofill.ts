@@ -17,9 +17,11 @@ import type {
   AutofillOptionSummary,
   OrderedAutofillResult,
   OrderedAutofillStepResult,
+  OrderedFormFillPayload,
   AutofillResult,
   AutofillStrategy,
   FormField,
+  FormSubmitResult,
   FormSetFieldValuePayload,
   FormSetFieldValueResult,
   FormSelectOptionsPayload,
@@ -40,6 +42,10 @@ interface SelectedWebsiteProfile {
   categories?: string[];
   description?: string;
   tags?: string[];
+  contactName?: string;
+  contactEmail?: string;
+  submissionWebsiteUrl?: string;
+  submissionComment?: string;
 }
 
 interface AutofillExecution {
@@ -164,6 +170,43 @@ const EDITOR_CONTAINER_CLASS_PATTERNS = [
   'easymde', 'codemirror', 'prosemirror', 'tiptap', 'ql-toolbar',
   'toastui-editor', 'bytemd', 'milkdown',
 ];
+
+const SUBMIT_POSITIVE_TERMS = [
+  'submit',
+  'post',
+  'post comment',
+  'post reply',
+  'comment',
+  'reply',
+  'leave reply',
+  'send',
+  'publish',
+  'save',
+  'apply',
+  'continue',
+  'next',
+  'register',
+  'join',
+  'add comment',
+  'add reply',
+] as const;
+
+const SUBMIT_NEGATIVE_TERMS = [
+  'cancel',
+  'reset',
+  'clear',
+  'preview',
+  'search',
+  'filter',
+  'subscribe',
+  'unsubscribe',
+  'notify',
+  'login',
+  'log in',
+  'sign in',
+  'share',
+  'like',
+] as const;
 
 function isEditorToolbarContainer(container: HTMLElement): boolean {
   // Check container role
@@ -330,6 +373,10 @@ async function getSelectedWebsiteProfile(): Promise<SelectedWebsiteProfile | nul
       categories: [...LOCAL_TEST_DEFAULT_WEBSITE.categories],
       description: LOCAL_TEST_DEFAULT_WEBSITE.description,
       tags: [...LOCAL_TEST_DEFAULT_WEBSITE.tags],
+      contactName: LOCAL_TEST_DEFAULT_WEBSITE.contactName,
+      contactEmail: LOCAL_TEST_DEFAULT_WEBSITE.contactEmail,
+      submissionWebsiteUrl: LOCAL_TEST_DEFAULT_WEBSITE.submissionWebsiteUrl,
+      submissionComment: LOCAL_TEST_DEFAULT_WEBSITE.submissionComment,
     };
   }
 
@@ -520,6 +567,18 @@ function buildTagText(profile: SelectedWebsiteProfile): string | null {
   return buildKeywordText(profile);
 }
 
+function getSubmissionWebsiteUrl(profile: SelectedWebsiteProfile): string {
+  return profile.submissionWebsiteUrl?.trim() || profile.url;
+}
+
+function buildSubmissionComment(profile: SelectedWebsiteProfile): string {
+  if (profile.submissionComment?.trim()) {
+    return profile.submissionComment.trim();
+  }
+
+  return `Hi, thanks for sharing this resource. ${profile.name} may be useful for readers exploring ${getProfileCategories(profile)[0] || 'AI tools'}: ${getSubmissionWebsiteUrl(profile)}`;
+}
+
 function isPluralCategoryField(descriptor: string): boolean {
   return containsAny(descriptor, ['categories', 'industries', 'topics']);
 }
@@ -533,7 +592,11 @@ function resolveTextValue(field: FormField, profile: SelectedWebsiteProfile): st
   const description = buildDescription(profile);
   const host = getHostname(profile.url);
 
-  if (containsAny(descriptor, ['email', 'e-mail', 'phone', 'tel', 'mobile', 'fax'])) {
+  if (containsAny(descriptor, ['email', 'e-mail'])) {
+    return profile.contactEmail?.trim() || null;
+  }
+
+  if (containsAny(descriptor, ['phone', 'tel', 'mobile', 'fax'])) {
     return null;
   }
 
@@ -541,7 +604,11 @@ function resolveTextValue(field: FormField, profile: SelectedWebsiteProfile): st
     field.type === 'url' ||
     containsAny(descriptor, ['website', 'homepage', 'domain', 'url', 'link'])
   ) {
-    return profile.url;
+    return getSubmissionWebsiteUrl(profile);
+  }
+
+  if (containsAny(descriptor, ['comment', 'reply', 'leave a reply', 'your comment'])) {
+    return buildSubmissionComment(profile);
   }
 
   if (
@@ -559,7 +626,7 @@ function resolveTextValue(field: FormField, profile: SelectedWebsiteProfile): st
       'name',
     ])
   ) {
-    return profile.name;
+    return profile.contactName?.trim() || profile.name;
   }
 
   if (containsAny(descriptor, ['category', 'categories', 'industry', 'industries', 'niche', 'sector', 'type'])) {
@@ -1074,6 +1141,195 @@ function dispatchMouseSequence(element: HTMLElement): void {
   element.dispatchEvent(new PointerEvent('pointerup', { ...init, pointerId: 1, buttons: 0 }));
   element.dispatchEvent(new MouseEvent('mouseup', { ...init, buttons: 0 }));
   element.dispatchEvent(new MouseEvent('click', { ...init, buttons: 0 }));
+}
+
+function getSubmitControlText(element: HTMLElement): string {
+  if (element instanceof HTMLInputElement) {
+    return [
+      element.value,
+      element.name,
+      element.id,
+      element.getAttribute('aria-label'),
+      element.getAttribute('title'),
+      element.className,
+    ]
+      .filter(Boolean)
+      .join(' ');
+  }
+
+  return [
+    element.textContent,
+    element.getAttribute('aria-label'),
+    element.getAttribute('title'),
+    element.getAttribute('value'),
+    element.getAttribute('name'),
+    element.id,
+    element.className,
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
+function getSubmitControlLabel(element: HTMLElement): string {
+  const text = getSubmitControlText(element).replace(/\s+/g, ' ').trim();
+  if (text) {
+    return text.slice(0, 120);
+  }
+
+  if (element instanceof HTMLInputElement) {
+    return element.type || 'input';
+  }
+
+  return element.tagName.toLowerCase();
+}
+
+function isDisabledSubmitControl(element: HTMLElement): boolean {
+  if (element.closest('[data-autofill-extension-ui], [data-page-agent-not-interactive]')) {
+    return true;
+  }
+
+  if (element instanceof HTMLButtonElement || element instanceof HTMLInputElement) {
+    return element.disabled;
+  }
+
+  return element.getAttribute('aria-disabled') === 'true';
+}
+
+function scoreSubmitControl(element: HTMLElement, targetForm: HTMLFormElement | null): number {
+  if (!isVisibleElement(element) || isDisabledSubmitControl(element)) {
+    return Number.NEGATIVE_INFINITY;
+  }
+
+  const text = normalizeText(getSubmitControlText(element));
+  const tagName = element.tagName.toLowerCase();
+  let score = 0;
+
+  if (targetForm && element.closest('form') === targetForm) {
+    score += 80;
+  }
+
+  if (element instanceof HTMLButtonElement) {
+    if (element.type === 'submit') score += 34;
+    if (!element.type || element.type === 'button') score += 8;
+  }
+
+  if (element instanceof HTMLInputElement) {
+    if (element.type === 'submit') score += 38;
+    if (element.type === 'button') score += 12;
+    if (element.type === 'image') score += 18;
+  }
+
+  if (element.getAttribute('role') === 'button') {
+    score += 12;
+  }
+
+  if (tagName === 'a') {
+    score += 4;
+  }
+
+  for (const term of SUBMIT_POSITIVE_TERMS) {
+    if (text === term) {
+      score += 45;
+    } else if (text.includes(term)) {
+      score += 24;
+    }
+  }
+
+  for (const term of SUBMIT_NEGATIVE_TERMS) {
+    if (text.includes(term)) {
+      score -= 50;
+    }
+  }
+
+  const rect = element.getBoundingClientRect();
+  if (rect.width >= 24 && rect.height >= 20) {
+    score += 4;
+  }
+
+  return score;
+}
+
+function getSubmitControlCandidates(targetForm: HTMLFormElement | null): HTMLElement[] {
+  const selector = [
+    'button',
+    'input[type="submit"]',
+    'input[type="button"]',
+    'input[type="image"]',
+    '[role="button"]',
+    'a[href]',
+    '[onclick]',
+  ].join(', ');
+
+  const scopedCandidates = targetForm
+    ? Array.from(targetForm.querySelectorAll<HTMLElement>(selector))
+    : [];
+  const globalCandidates = Array.from(document.querySelectorAll<HTMLElement>(selector));
+  return unique([...scopedCandidates, ...globalCandidates]);
+}
+
+function findBestSubmitControl(targetForm: HTMLFormElement | null): HTMLElement | null {
+  const scored = getSubmitControlCandidates(targetForm)
+    .map((element) => ({
+      element,
+      score: scoreSubmitControl(element, targetForm),
+    }))
+    .filter((candidate) => candidate.score >= 24)
+    .sort((left, right) => right.score - left.score);
+
+  return scored[0]?.element || null;
+}
+
+async function clickSubmitControl(element: HTMLElement): Promise<void> {
+  element.scrollIntoView({ block: 'center', inline: 'center', behavior: 'auto' });
+  await new Promise((resolve) => window.setTimeout(resolve, 120));
+  element.focus();
+  element.click();
+  await new Promise((resolve) => window.setTimeout(resolve, 300));
+}
+
+async function submitFormForFields(scopedFields: FormField[]): Promise<FormSubmitResult> {
+  const diagnostics: string[] = [];
+  const targetForm =
+    scopedFields
+      .map((field) => field.element.closest('form'))
+      .find((form): form is HTMLFormElement => form instanceof HTMLFormElement) || null;
+  const submitControl = findBestSubmitControl(targetForm);
+
+  if (!submitControl) {
+    diagnostics.push(
+      targetForm
+        ? 'No visible submit, post, comment, reply, send, publish, continue, or save control was found inside the target form.'
+        : 'No visible submit, post, comment, reply, send, publish, continue, or save control was found on the page.'
+    );
+
+    return {
+      status: 'button_not_found',
+      message: 'The form fields were filled, but no matching submit button was found.',
+      diagnostics,
+    };
+  }
+
+  const buttonLabel = getSubmitControlLabel(submitControl);
+
+  try {
+    await clickSubmitControl(submitControl);
+    diagnostics.push(`Clicked submit control: ${buttonLabel}.`);
+    return {
+      status: 'submitted',
+      buttonLabel,
+      message: `Clicked "${buttonLabel}" after filling the form.`,
+      diagnostics,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    diagnostics.push(`Failed to click submit control "${buttonLabel}": ${message}`);
+    return {
+      status: 'blocked',
+      buttonLabel,
+      message: `Found "${buttonLabel}", but clicking it failed.`,
+      diagnostics,
+    };
+  }
 }
 
 function isSearchLikeElement(element: HTMLElement): boolean {
@@ -2622,11 +2878,15 @@ function buildProfileSummary(profile: SelectedWebsiteProfile) {
   return {
     id: profile.id,
     name: profile.name,
-    url: profile.url,
+    url: getSubmissionWebsiteUrl(profile),
     category: profile.category,
     categories: getProfileCategories(profile),
     description: buildDescription(profile),
     tags: getProfileTags(profile),
+    contactName: profile.contactName?.trim() || profile.name,
+    contactEmail: profile.contactEmail,
+    submissionWebsiteUrl: getSubmissionWebsiteUrl(profile),
+    submissionComment: buildSubmissionComment(profile),
   };
 }
 
@@ -3171,7 +3431,8 @@ async function tryLLMAutofill(
 }
 
 export async function orderedAutofillFromSelectedWebsite(
-  targetElement: Element | null = document.activeElement
+  targetElement: Element | null = document.activeElement,
+  payload?: OrderedFormFillPayload
 ): Promise<OrderedAutofillResult> {
   const profile = await getSelectedWebsiteProfile();
 
@@ -3239,7 +3500,7 @@ export async function orderedAutofillFromSelectedWebsite(
       };
     }
 
-    return {
+    const completedResult: OrderedAutofillResult = {
       status: 'completed',
       profileName: profile.name,
       profileUrl: profile.url,
@@ -3250,6 +3511,17 @@ export async function orderedAutofillFromSelectedWebsite(
       filledFields: execution.filledFields,
       steps: execution.steps,
     };
+
+    if (payload?.submitAfterFill) {
+      const submitResult = await submitFormForFields(scopedFields);
+      return {
+        ...completedResult,
+        submitResult,
+        message: `${completedResult.message} ${submitResult.message}`,
+      };
+    }
+
+    return completedResult;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return {
@@ -3263,6 +3535,20 @@ export async function orderedAutofillFromSelectedWebsite(
       steps: [],
     };
   }
+}
+
+export async function submitCurrentForm(
+  targetElement: Element | null = document.activeElement
+): Promise<FormSubmitResult> {
+  const detector = new FormFieldDetector();
+  const targetField = resolveTargetField(detector, targetElement);
+
+  if (!targetField) {
+    const fields = detector.detect();
+    return submitFormForFields(fields);
+  }
+
+  return submitFormForFields(getScopeFields(detector, targetField));
 }
 
 export async function autofillFormFromSelectedWebsite(

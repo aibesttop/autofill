@@ -10,6 +10,10 @@ export interface AgentWebsiteProfileContext {
   categories?: string[];
   description?: string;
   tags?: string[];
+  contactName?: string;
+  contactEmail?: string;
+  submissionWebsiteUrl?: string;
+  submissionComment?: string;
 }
 
 function formatList(values: string[] | undefined): string | null {
@@ -35,7 +39,7 @@ export function buildQuickFillAgentTask(input?: {
     input?.title ? `- Current page title: ${input.title}` : null,
     '- Stay on the current tab. Do not open, switch to, or group other tabs unless the user explicitly asks for that.',
     '- Start by calling ordered_quick_fill_form exactly once.',
-    '- ordered_quick_fill_form must perform the entire sequence: scan the page, generate field content, and fill fields one by one in page order.',
+    '- ordered_quick_fill_form must perform the entire sequence: scan the page, generate field content, fill fields one by one in page order, and click the final submit/post/comment/reply/send/publish button after all planned fields are confirmed.',
     '- Do not call quick_fill_form before ordered_quick_fill_form. Do not start manual clicks or low-level typing before ordered_quick_fill_form returns.',
     '- If ordered_quick_fill_form reports a blocker, stop immediately and summarize that blocker instead of improvising more interactions.',
     '- Follow the ordered fill sequence below in page order. Work on one numbered field at a time.',
@@ -44,8 +48,7 @@ export function buildQuickFillAgentTask(input?: {
     '- Do not reopen or revisit a completed numbered field unless the page visibly reset it or validation clearly shows it is still missing.',
     '- Preserve existing non-empty text values. Do not clear or overwrite text fields that already contain content unless the user explicitly asks for replacement.',
     '- Continue only while each numbered field is confirmed complete. If one field is not confirmed, do not move on to the next field.',
-    '- Do not submit the final form unless the user explicitly instructs you to do so.',
-    '- Finish with a concise summary of what you filled, what still needs manual work, and any blockers.',
+    '- Finish with a concise summary of what you filled, whether submit was clicked, what still needs manual work, and any blockers.',
     '</quick_fill_agent_rules>',
     orderedFieldSequence.length > 0 ? '<ordered_fill_sequence>' : null,
     ...orderedFieldSequence,
@@ -91,7 +94,23 @@ export function buildAgentTaskWithProfileContext(
     lines.push(`- Description: ${profile.description}`);
   }
 
-  lines.push('- Prefer these values over guessing when filling fields or selecting categories/tags.');
+  if (profile.contactName) {
+    lines.push(`- Form name value: ${profile.contactName}`);
+  }
+
+  if (profile.contactEmail) {
+    lines.push(`- Form email value: ${profile.contactEmail}`);
+  }
+
+  if (profile.submissionWebsiteUrl) {
+    lines.push(`- Form website value: ${profile.submissionWebsiteUrl}`);
+  }
+
+  if (profile.submissionComment) {
+    lines.push(`- Default comment value: ${profile.submissionComment}`);
+  }
+
+  lines.push('- Prefer these values over guessing when filling fields, comments, email, website, or selecting categories/tags.');
   lines.push('- If a required field is missing, infer conservatively from this profile only.');
   lines.push('- Do not override explicit user instructions with profile defaults.');
   lines.push('</website_profile_context>');

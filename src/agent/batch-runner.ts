@@ -7,7 +7,7 @@ import { buildAgentTaskWithProfileContext } from './task-context';
 import type { AgentWebsiteProfileContext } from './task-context';
 
 export const DEFAULT_BATCH_AGENT_TASK_TEMPLATE =
-  'Open the target page, inspect the submission form, autofill it using the selected website profile, and stop before the final submission step unless the task explicitly requires submitting the form.';
+  'Open the target page, inspect the submission form, autofill it using the selected website profile, then click the final submit/post/comment/reply/send/publish button after the fields are confirmed.';
 
 export interface BatchAgentExecutionResult {
   task: string;
@@ -23,7 +23,7 @@ function buildBatchAgentTask(targetUrl: string, taskTemplate: string): string {
     `- Target URL: ${targetUrl}`,
     '- Start by opening the target URL in a new tab if you are not already on that exact page.',
     '- After the target page is open, analyze and operate on that page instead of the original side panel tab.',
-    '- Prefer the extension tools quick_discover_form and quick_fill_form before low-level manual DOM actions.',
+    '- Prefer the extension tools quick_discover_form and ordered_quick_fill_form before low-level manual DOM actions.',
     '</batch_target_url>',
     taskTemplate.trim() || DEFAULT_BATCH_AGENT_TASK_TEMPLATE,
   ].join('\n');

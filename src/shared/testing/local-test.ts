@@ -23,6 +23,11 @@ export const LOCAL_TEST_WEBSITES: Website[] = [
     category: 'SaaS',
     categories: ['SaaS', 'AI Tools'],
     tags: ['startup', 'directory', 'automation', 'launch'],
+    contactName: 'Acme Launchpad',
+    contactEmail: 'test@example.com',
+    submissionWebsiteUrl: 'https://acme.test',
+    submissionComment:
+      'Hi, thanks for sharing this resource. Acme Launchpad may be useful for readers exploring startup directory submissions: https://acme.test',
     status: 'active',
     created_at: new Date('2026-03-01T00:00:00.000Z').toISOString(),
     updated_at: new Date('2026-03-14T00:00:00.000Z').toISOString(),
@@ -35,6 +40,11 @@ export const LOCAL_TEST_WEBSITES: Website[] = [
     category: 'Design',
     categories: ['Design', 'Creative Agency'],
     tags: ['branding', 'studio', 'creative', 'portfolio'],
+    contactName: 'Northwind Studio',
+    contactEmail: 'studio@example.com',
+    submissionWebsiteUrl: 'https://northwind.test',
+    submissionComment:
+      'Hi, thanks for the helpful post. Northwind Studio may be useful for readers looking at creative portfolio resources: https://northwind.test',
     status: 'active',
     created_at: new Date('2026-03-02T00:00:00.000Z').toISOString(),
     updated_at: new Date('2026-03-14T00:00:00.000Z').toISOString(),

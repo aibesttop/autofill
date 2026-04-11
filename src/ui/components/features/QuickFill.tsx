@@ -46,6 +46,10 @@ function toWebsiteProfileContext(
     categories: profile.categories,
     description: profile.description,
     tags: profile.tags,
+    contactName: profile.contactName,
+    contactEmail: profile.contactEmail,
+    submissionWebsiteUrl: profile.submissionWebsiteUrl,
+    submissionComment: profile.submissionComment,
   };
 }
 

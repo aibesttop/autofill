@@ -5,6 +5,7 @@ import type {
   AutofillResult,
   DetectedFormField,
   FormDetectionResult,
+  FormSubmitResult,
   OrderedAutofillResult,
   FormSetFieldValueResult,
   FormSelectOptionsResult,
@@ -54,6 +55,11 @@ type FormMessageResponse =
   | {
       success?: boolean;
       result?: OrderedAutofillResult;
+      error?: string;
+    }
+  | {
+      success?: boolean;
+      result?: FormSubmitResult;
       error?: string;
     };
 
@@ -166,9 +172,24 @@ function formatOrderedAutofillSummary(tab: ToolTabContext, result: OrderedAutofi
     result.message,
     `Completed ${result.completedCount} of ${result.totalCount} planned steps.`,
     result.filledFields.length > 0 ? `Verified fields: ${result.filledFields.join(', ')}.` : null,
+    result.submitResult
+      ? `Submit: ${result.submitResult.status}. ${result.submitResult.message}`
+      : null,
     result.status === 'blocked'
       ? 'Execution is blocked on the current numbered field. Do not continue to later fields until this blocker is resolved.'
       : null,
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+function formatSubmitSummary(tab: ToolTabContext, result: FormSubmitResult): string {
+  return [
+    `Submit attempted on ${tab.url}.`,
+    `Status: ${result.status}.`,
+    result.buttonLabel ? `Button: ${result.buttonLabel}.` : null,
+    result.message,
+    ...result.diagnostics.map((entry) => `- ${entry}`),
   ]
     .filter(Boolean)
     .join('\n');
@@ -209,6 +230,7 @@ async function sendFormMessage<TResponse extends FormMessageResponse>(
     | 'form:detect'
     | 'form:fill'
     | 'form:ordered-fill'
+    | 'form:submit'
     | 'form:select-options'
     | 'form:set-field-value',
   payload?: Record<string, unknown>
@@ -250,7 +272,7 @@ export function createFormTools(tabsController: TabsController): Record<string, 
 
     ordered_quick_fill_form: tool({
       description:
-        'Run a deterministic ordered autofill pass on the current page: scan visible fields, ask the LLM for field values, then fill fields one by one in page order. Stop immediately on the first field that cannot be confirmed, and emit per-field runtime diagnostics.',
+        'Run a deterministic ordered autofill pass on the current page: scan visible fields, ask the LLM for field values, fill fields one by one in page order, then click the best matching submit/post/comment/reply/send/publish button if all planned fields complete. Stop immediately on the first field that cannot be confirmed, and emit per-field runtime diagnostics.',
       inputSchema: z.object({}),
       execute: async function (this: PageAgentCore) {
         try {
@@ -258,7 +280,7 @@ export function createFormTools(tabsController: TabsController): Record<string, 
             success?: boolean;
             result?: OrderedAutofillResult;
             error?: string;
-          }>(tabsController, 'form:ordered-fill');
+          }>(tabsController, 'form:ordered-fill', { submitAfterFill: true });
 
           if (!response.success || !response.result) {
             throw new Error(response.error || 'No ordered autofill result returned.');
@@ -274,6 +296,29 @@ export function createFormTools(tabsController: TabsController): Record<string, 
         }
       },
     }) as unknown as FormTool,
+
+    submit_current_form: {
+      description:
+        'Click the best matching submit control for the current form. Recognizes labels and attributes like submit, post, post comment, comment, reply, send, publish, save, continue, next, register, join, and apply.',
+      inputSchema: z.object({}),
+      execute: async () => {
+        try {
+          const { tab, response } = await sendFormMessage<{
+            success?: boolean;
+            result?: FormSubmitResult;
+            error?: string;
+          }>(tabsController, 'form:submit');
+
+          if (!response.success || !response.result) {
+            throw new Error(response.error || 'No submit result returned.');
+          }
+
+          return formatSubmitSummary(tab, response.result);
+        } catch (error) {
+          return `Failed to submit current form: ${error instanceof Error ? error.message : String(error)}`;
+        }
+      },
+    },
 
     quick_fill_form: {
       description:

@@ -64,4 +64,9 @@ export const LOCAL_TEST_DEFAULT_WEBSITE = {
   category: 'SaaS',
   categories: ['SaaS', 'AI Tools'],
   tags: ['startup', 'directory', 'automation', 'launch'],
+  contactName: 'Acme Launchpad',
+  contactEmail: 'test@example.com',
+  submissionWebsiteUrl: 'https://acme.test',
+  submissionComment:
+    'Hi, thanks for sharing this resource. Acme Launchpad may be useful for readers exploring startup directory submissions: https://acme.test',
 } as const;

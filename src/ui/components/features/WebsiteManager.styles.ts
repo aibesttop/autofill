@@ -59,6 +59,85 @@ export const ActiveProfileMeta = styled.p`
   line-height: 1.6;
   color: #4a5568;
 `;
+export const SubmissionDefaults = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+  padding-top: 14px;
+  border-top: 1px solid #e2e8f0;
+`;
+export const SubmissionDefaultsTitle = styled.h3`
+  margin: 0;
+  font-size: 15px;
+  color: #1a202c;
+`;
+export const SubmissionDefaultsHint = styled.p`
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #718096;
+`;
+export const FieldGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+
+  @media (max-width: 720px) {
+    grid-template-columns: 1fr;
+  }
+`;
+export const FieldGroup = styled.label`
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+`;
+export const FieldLabel = styled.span`
+  font-size: 12px;
+  font-weight: 700;
+  color: #2d3748;
+`;
+export const TextInput = styled.input`
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid #cbd5e0;
+  border-radius: 6px;
+  color: #1a202c;
+  background: #ffffff;
+  font-size: 13px;
+  outline: none;
+
+  &:focus {
+    border-color: #5a67d8;
+    box-shadow: 0 0 0 3px rgba(90, 103, 216, 0.12);
+  }
+`;
+export const Textarea = styled.textarea`
+  width: 100%;
+  min-height: 88px;
+  padding: 10px 12px;
+  border: 1px solid #cbd5e0;
+  border-radius: 6px;
+  color: #1a202c;
+  background: #ffffff;
+  font-size: 13px;
+  font-family: inherit;
+  line-height: 1.5;
+  resize: vertical;
+  outline: none;
+
+  &:focus {
+    border-color: #5a67d8;
+    box-shadow: 0 0 0 3px rgba(90, 103, 216, 0.12);
+  }
+`;
+export const DefaultActions = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+`;
 export const List = styled.div`display: flex; flex-direction: column; gap: 12px; margin-top: 12px;`;
 export const WebsiteCard = styled.div<{ isSelected: boolean }>`
   display: flex;

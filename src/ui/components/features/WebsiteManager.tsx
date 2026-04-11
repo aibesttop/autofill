@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useWebsites } from '../../hooks/useWebsites';
 import { useAutomationWorkspace } from '../../hooks/useAutomationWorkspace';
 import { Button } from '../shared/Button';
@@ -17,9 +17,35 @@ function formatDate(value: string): string {
 
 export const WebsiteManager: React.FC = () => {
   const { websites, isLoading, error, refresh } = useWebsites();
-  const { selectedWebsiteId, selectedWebsiteSnapshot, selectWebsite } = useAutomationWorkspace();
+  const {
+    selectedWebsiteId,
+    selectedWebsiteSnapshot,
+    selectWebsite,
+    saveWebsiteProfileOverride,
+  } = useAutomationWorkspace();
   const [selectingId, setSelectingId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [contactName, setContactName] = useState('');
+  const [contactEmail, setContactEmail] = useState('');
+  const [submissionWebsiteUrl, setSubmissionWebsiteUrl] = useState('');
+  const [submissionComment, setSubmissionComment] = useState('');
+
+  useEffect(() => {
+    if (!selectedWebsiteSnapshot) {
+      setContactName('');
+      setContactEmail('');
+      setSubmissionWebsiteUrl('');
+      setSubmissionComment('');
+      return;
+    }
+
+    setContactName(selectedWebsiteSnapshot.contactName || selectedWebsiteSnapshot.name);
+    setContactEmail(selectedWebsiteSnapshot.contactEmail || '');
+    setSubmissionWebsiteUrl(
+      selectedWebsiteSnapshot.submissionWebsiteUrl || selectedWebsiteSnapshot.url
+    );
+    setSubmissionComment(selectedWebsiteSnapshot.submissionComment || '');
+  }, [selectedWebsiteSnapshot]);
 
   const handleSelectWebsite = async (websiteId: string) => {
     const website = websites.find((item) => item.id === websiteId) || null;
@@ -39,6 +65,28 @@ export const WebsiteManager: React.FC = () => {
       );
     } finally {
       setSelectingId(null);
+    }
+  };
+
+  const handleSaveSubmissionDefaults = async () => {
+    if (!selectedWebsiteSnapshot) {
+      return;
+    }
+
+    setFeedback(null);
+
+    try {
+      await saveWebsiteProfileOverride(selectedWebsiteSnapshot.id, {
+        contactName: contactName.trim() || selectedWebsiteSnapshot.name,
+        contactEmail: contactEmail.trim(),
+        submissionWebsiteUrl: submissionWebsiteUrl.trim() || selectedWebsiteSnapshot.url,
+        submissionComment: submissionComment.trim(),
+      });
+      setFeedback(`Submission defaults saved for ${selectedWebsiteSnapshot.name}.`);
+    } catch (nextError) {
+      setFeedback(
+        nextError instanceof Error ? nextError.message : 'Failed to save submission defaults.'
+      );
     }
   };
 
@@ -75,6 +123,62 @@ export const WebsiteManager: React.FC = () => {
                   .join(' · ')
               : 'Choose a website below to make Quick Fill and Batch Submit use it by default.'}
           </S.ActiveProfileMeta>
+          {selectedWebsiteSnapshot ? (
+            <S.SubmissionDefaults
+              onClick={(event) => {
+                event.stopPropagation();
+              }}
+            >
+              <S.SubmissionDefaultsTitle>Submission defaults</S.SubmissionDefaultsTitle>
+              <S.SubmissionDefaultsHint>
+                Used for common comment forms such as Name, Email, Website, and Comment.
+              </S.SubmissionDefaultsHint>
+              <S.FieldGrid>
+                <S.FieldGroup>
+                  <S.FieldLabel>Name</S.FieldLabel>
+                  <S.TextInput
+                    value={contactName}
+                    onChange={(event) => setContactName(event.target.value)}
+                    placeholder={selectedWebsiteSnapshot.name}
+                  />
+                </S.FieldGroup>
+                <S.FieldGroup>
+                  <S.FieldLabel>Email</S.FieldLabel>
+                  <S.TextInput
+                    type="email"
+                    value={contactEmail}
+                    onChange={(event) => setContactEmail(event.target.value)}
+                    placeholder="name@example.com"
+                  />
+                </S.FieldGroup>
+                <S.FieldGroup>
+                  <S.FieldLabel>Website</S.FieldLabel>
+                  <S.TextInput
+                    type="url"
+                    value={submissionWebsiteUrl}
+                    onChange={(event) => setSubmissionWebsiteUrl(event.target.value)}
+                    placeholder={selectedWebsiteSnapshot.url}
+                  />
+                </S.FieldGroup>
+              </S.FieldGrid>
+              <S.FieldGroup>
+                <S.FieldLabel>Comment</S.FieldLabel>
+                <S.Textarea
+                  value={submissionComment}
+                  onChange={(event) => setSubmissionComment(event.target.value)}
+                  placeholder={`Hi, thanks for sharing this resource. ${selectedWebsiteSnapshot.name} may be useful for readers: ${selectedWebsiteSnapshot.url}`}
+                />
+              </S.FieldGroup>
+              <S.DefaultActions>
+                <Button size="sm" onClick={() => void handleSaveSubmissionDefaults()}>
+                  Save Defaults
+                </Button>
+                <S.ActionHint>
+                  Quick Fill uses these values and can click the final submit button after fields are confirmed.
+                </S.ActionHint>
+              </S.DefaultActions>
+            </S.SubmissionDefaults>
+          ) : null}
         </S.ActiveProfilePanel>
       </Card>
 

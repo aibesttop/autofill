@@ -22,6 +22,10 @@ export interface Website {
   category?: string;
   categories?: string[];
   tags?: string[];
+  contactName?: string;
+  contactEmail?: string;
+  submissionWebsiteUrl?: string;
+  submissionComment?: string;
   status: 'pending' | 'active' | 'error';
   created_at: string;
   updated_at: string;

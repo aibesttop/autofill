@@ -19,6 +19,7 @@ export const STORAGE_KEYS = {
   BATCH_STATE: 'batchState',
   SELECTED_WEBSITE_ID: 'selectedWebsiteId',
   SELECTED_WEBSITE_SNAPSHOT: 'selectedWebsiteSnapshot',
+  WEBSITE_PROFILE_OVERRIDES: 'websiteProfileOverrides',
   CURRENT_TAB_ID: 'currentTabId',
 } as const;
 
