@@ -208,6 +208,44 @@ const SUBMIT_NEGATIVE_TERMS = [
   'like',
 ] as const;
 
+const SAFE_COMMENT_CHECKBOX_POSITIVE_TERMS = [
+  'save my name',
+  'save my email',
+  'save my name, email',
+  'save my name email',
+  'save my name, email, and website',
+  'save my name email and website',
+  'save my details',
+  'save my information',
+  'remember my name',
+  'remember my details',
+  'remember me for next time',
+  'next time i comment',
+  'next time i leave a comment',
+  'in this browser',
+] as const;
+
+const SAFE_COMMENT_CHECKBOX_NEGATIVE_TERMS = [
+  'notify',
+  'notification',
+  'follow-up',
+  'follow up',
+  'new posts',
+  'subscribe',
+  'newsletter',
+  'marketing',
+  'promotional',
+  'terms',
+  'privacy',
+  'policy',
+  'gdpr',
+  'agree',
+  'consent',
+  'accept',
+  'robot',
+  'captcha',
+] as const;
+
 function isEditorToolbarContainer(container: HTMLElement): boolean {
   // Check container role
   if (container.getAttribute('role') === 'toolbar') {
@@ -1267,6 +1305,79 @@ function getSubmitControlCandidates(targetForm: HTMLFormElement | null): HTMLEle
   return unique([...scopedCandidates, ...globalCandidates]);
 }
 
+function getCheckboxLabelText(checkbox: HTMLInputElement): string {
+  const explicitLabel = checkbox.id
+    ? document.querySelector<HTMLLabelElement>(`label[for="${CSS.escape(checkbox.id)}"]`)
+    : null;
+  const closestLabel = checkbox.closest('label');
+  const ariaLabelledBy = checkbox.getAttribute('aria-labelledby');
+  const labelledByText = ariaLabelledBy
+    ? ariaLabelledBy
+        .split(/\s+/)
+        .map((id) => document.getElementById(id)?.textContent || '')
+        .join(' ')
+    : '';
+
+  return [
+    explicitLabel?.textContent,
+    closestLabel?.textContent,
+    checkbox.getAttribute('aria-label'),
+    checkbox.getAttribute('title'),
+    labelledByText,
+    checkbox.name,
+    checkbox.id,
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
+function shouldAutoCheckSafeCommentPreference(checkbox: HTMLInputElement): boolean {
+  if (checkbox.checked || checkbox.disabled || !isVisibleElement(checkbox)) {
+    return false;
+  }
+
+  const label = normalizeText(getCheckboxLabelText(checkbox));
+  if (!label) {
+    return false;
+  }
+
+  if (containsAny(label, [...SAFE_COMMENT_CHECKBOX_NEGATIVE_TERMS])) {
+    return false;
+  }
+
+  return containsAny(label, [...SAFE_COMMENT_CHECKBOX_POSITIVE_TERMS]);
+}
+
+function checkCheckbox(checkbox: HTMLInputElement): void {
+  checkbox.focus();
+  nativeCheckedSetter?.call(checkbox, true);
+  if (!checkbox.checked) {
+    checkbox.checked = true;
+  }
+  checkbox.dispatchEvent(new Event('input', { bubbles: true }));
+  checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+  checkbox.blur();
+}
+
+function applySafeCommentCheckboxDefaults(
+  targetForm: HTMLFormElement | null,
+  diagnostics: string[]
+): void {
+  const checkboxSelector = 'input[type="checkbox"]';
+  const checkboxes = targetForm
+    ? Array.from(targetForm.querySelectorAll<HTMLInputElement>(checkboxSelector))
+    : Array.from(document.querySelectorAll<HTMLInputElement>(checkboxSelector));
+
+  checkboxes.forEach((checkbox) => {
+    if (!shouldAutoCheckSafeCommentPreference(checkbox)) {
+      return;
+    }
+
+    checkCheckbox(checkbox);
+    diagnostics.push(`Checked comment preference checkbox: ${getCheckboxLabelText(checkbox).trim()}.`);
+  });
+}
+
 function findBestSubmitControl(targetForm: HTMLFormElement | null): HTMLElement | null {
   const scored = getSubmitControlCandidates(targetForm)
     .map((element) => ({
@@ -1293,6 +1404,9 @@ async function submitFormForFields(scopedFields: FormField[]): Promise<FormSubmi
     scopedFields
       .map((field) => field.element.closest('form'))
       .find((form): form is HTMLFormElement => form instanceof HTMLFormElement) || null;
+
+  applySafeCommentCheckboxDefaults(targetForm, diagnostics);
+
   const submitControl = findBestSubmitControl(targetForm);
 
   if (!submitControl) {

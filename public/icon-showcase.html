@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Autofill Extension Icon Concepts</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
+    
+    body {
+      margin: 0;
+      padding: 0;
+      background: #0f172a;
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      color: #e2e8f0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+    }
+
+    header {
+      text-align: center;
+      margin: 60px 0;
+    }
+
+    h1 {
+      font-weight: 600;
+      font-size: 2.5rem;
+      background: linear-gradient(135deg, #3b82f6, #a855f7);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin: 0 0 10px 0;
+    }
+
+    p.subtitle {
+      font-size: 1.1rem;
+      color: #94a3b8;
+      font-weight: 300;
+      margin: 0;
+    }
+
+    .grid {
+      display: flex;
+      gap: 40px;
+      flex-wrap: wrap;
+      justify-content: center;
+      max-width: 1200px;
+      padding: 0 40px 80px;
+    }
+
+    .card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 24px;
+      padding: 40px;
+      width: 320px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s;
+    }
+
+    .card:hover {
+      transform: translateY(-10px);
+      box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+      border-color: #475569;
+    }
+
+    .icon-wrapper {
+      width: 128px;
+      height: 128px;
+      margin-bottom: 30px;
+      /* Add mild shadow representing the extension icon in browser */
+      filter: drop-shadow(0 10px 15px rgba(0,0,0,0.5));
+    }
+
+    h2 {
+      font-size: 1.3rem;
+      font-weight: 500;
+      margin: 0 0 12px 0;
+      color: #f8fafc;
+    }
+
+    p.desc {
+      font-size: 0.95rem;
+      color: #94a3b8;
+      text-align: center;
+      line-height: 1.5;
+      margin: 0 0 24px 0;
+    }
+
+    .actions {
+      display: flex;
+      gap: 12px;
+      margin-top: auto;
+    }
+
+    button {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      color: #e2e8f0;
+      border-radius: 8px;
+      padding: 8px 16px;
+      font-size: 0.9rem;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.2s;
+    }
+
+    button:hover {
+      background: rgba(255,255,255,0.1);
+      border-color: rgba(255,255,255,0.2);
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>Autofill Extension</h1>
+    <p class="subtitle">AI-Powered SEO Directory Submission Tool - Icon Concepts</p>
+  </header>
+
+  <div class="grid">
+    <!-- Concept 1 -->
+    <div class="card">
+      <div class="icon-wrapper" id="svg1">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+          <defs>
+            <linearGradient id="bg1" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#0f172a" />
+              <stop offset="100%" stop-color="#020617" />
+            </linearGradient>
+            <linearGradient id="glow1" x1="0%" y1="100%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="#3b82f6" />
+              <stop offset="50%" stop-color="#8b5cf6" />
+              <stop offset="100%" stop-color="#ec4899" />
+            </linearGradient>
+            <filter id="shadow1" x="-50%" y="-50%" width="200%" height="200%">
+              <feDropShadow dx="0" dy="16" stdDeviation="20" flood-color="#8b5cf6" flood-opacity="0.5" />
+            </filter>
+          </defs>
+          <rect width="512" height="512" rx="112" fill="url(#bg1)" />
+          <path d="M 256 120 L 400 370 L 256 314 L 112 370 Z" fill="none" stroke="url(#glow1)" stroke-width="32" stroke-linecap="round" stroke-linejoin="round" filter="url(#shadow1)"/>
+          <path d="M 256 120 L 256 314" fill="none" stroke="url(#glow1)" stroke-width="32" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M 400 80 C 400 100 415 115 435 115 C 415 115 400 130 400 150 C 400 130 385 115 365 115 C 385 115 400 100 400 80 Z" fill="url(#glow1)" />
+        </svg>
+      </div>
+      <h2>The AI Voyager</h2>
+      <p class="desc">Abstract 'A' shaped like a paper plane traversing upwards. Symbolizes rapid SEO submissions and the intelligence behind the Autofill magic.</p>
+      <div class="actions">
+        <button onclick="downloadSVG('svg1', 'autofill-voyager.svg')">Download SVG</button>
+      </div>
+    </div>
+
+    <!-- Concept 2 -->
+    <div class="card">
+      <div class="icon-wrapper" id="svg2">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+          <defs>
+            <linearGradient id="bg2" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#1e1b4b" />
+              <stop offset="100%" stop-color="#110c22" />
+            </linearGradient>
+            <linearGradient id="grad2" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#6366f1" />
+              <stop offset="100%" stop-color="#d946ef" />
+            </linearGradient>
+            <filter id="glow2" x="-20%" y="-20%" width="140%" height="140%">
+              <feGaussianBlur stdDeviation="12" result="blur" />
+              <feComposite in="SourceGraphic" in2="blur" operator="over" />
+            </filter>
+          </defs>
+          <rect width="512" height="512" rx="112" fill="url(#bg2)" />
+          <g transform="translate(136, 126)">
+            <rect x="0" y="0" width="100" height="32" rx="16" fill="rgba(255,255,255,0.1)" />
+            <rect x="0" y="70" width="240" height="32" rx="16" fill="rgba(255,255,255,0.05)" />
+            <rect x="0" y="140" width="180" height="32" rx="16" fill="rgba(255,255,255,0.05)" />
+            <path d="M-20 160 L 60 240 L 220 50" fill="none" stroke="url(#grad2)" stroke-width="40" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow2)"/>
+            <path d="M 220 -40 C 220 -5 245 20 280 20 C 245 20 220 45 220 80 C 220 45 195 20 160 20 C 195 20 220 -5 220 -40 Z" fill="url(#grad2)" filter="url(#glow2)"/>
+          </g>
+        </svg>
+      </div>
+      <h2>The Smart Fill</h2>
+      <p class="desc">A minimalist set of form fields combined with a sweeping magic checkmark ending in an AI spark. Clearly communicates 'automated form completion'.</p>
+      <div class="actions">
+        <button onclick="downloadSVG('svg2', 'autofill-smart.svg')">Download SVG</button>
+      </div>
+    </div>
+
+    <!-- Concept 3 -->
+    <div class="card">
+      <div class="icon-wrapper" id="svg3">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+          <defs>
+            <linearGradient id="bg3" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#ffffff" />
+              <stop offset="100%" stop-color="#f8fafc" />
+            </linearGradient>
+            <linearGradient id="grad3" x1="0%" y1="100%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="#0ea5e9" />
+              <stop offset="100%" stop-color="#3b82f6" />
+            </linearGradient>
+            <filter id="shadow3" x="-50%" y="-50%" width="200%" height="200%">
+              <feDropShadow dx="0" dy="16" stdDeviation="24" flood-color="#0ea5e9" flood-opacity="0.3" />
+            </filter>
+          </defs>
+          <!-- Using standard background color to distinguish from dark page wrapper -->
+          <rect width="512" height="512" rx="112" fill="url(#bg3)" />
+          <g filter="url(#shadow3)">
+            <!-- A lightning bolt that naturally forms the letter A -->
+            <path d="M 260 90 L 130 310 H 230 L 190 430 L 390 190 H 270 L 330 90 Z" fill="url(#grad3)" />
+          </g>
+        </svg>
+      </div>
+      <h2>The Fast Bolt</h2>
+      <p class="desc">A sharp, clean, light-mode design featuring a subtle 'A' integrated into a lightning fast flash. Simple, professional, corporate.</p>
+      <div class="actions">
+        <button onclick="downloadSVG('svg3', 'autofill-bolt.svg')">Download SVG</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function downloadSVG(id, filename) {
+      const svg = document.getElementById(id).querySelector('svg');
+      const serializer = new XMLSerializer();
+      let source = serializer.serializeToString(svg);
+      if(!source.match(/^<svg[^>]+xmlns="http\:\/\/www\.w3\.org\/2000\/svg"/)){
+        source = source.replace(/^<svg/, '<svg xmlns="http://www.w3.org/2000/svg"');
+      }
+      if(!source.match(/^<svg[^>]+"http\:\/\/www\.w3\.org\/1999\/xlink"/)){
+        source = source.replace(/^<svg/, '<svg xmlns:xlink="http://www.w3.org/1999/xlink"');
+      }
+      source = '<?xml version="1.0" standalone="no"?>\r\n' + source;
+      const url = "data:image/svg+xml;charset=utf-8,"+encodeURIComponent(source);
+      
+      const downloadLink = document.createElement("a");
+      downloadLink.href = url;
+      downloadLink.download = filename;
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      document.body.removeChild(downloadLink);
+    }
+  </script>
+</body>
+</html>
