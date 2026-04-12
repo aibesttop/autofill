@@ -18,23 +18,37 @@ const statusStyles: Record<WebsiteStatus, ReturnType<typeof css>> = {
   `,
 };
 
-export const Container = styled.div`max-width: 800px; margin: 0 auto;`;
+export const Container = styled.div`max-width: 920px; margin: 0 auto;`;
 export const Header = styled.div`
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 24px;
+
+  @media (max-width: 760px) {
+    flex-direction: column;
+  }
 `;
 export const Title = styled.h2`margin: 0 0 8px 0; font-size: 24px; color: #1a202c;`;
 export const Description = styled.p`margin: 0; font-size: 14px; color: #718096; max-width: 520px;`;
+export const HeaderActions = styled.div`
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+
+  @media (max-width: 760px) {
+    justify-content: flex-start;
+  }
+`;
 export const InfoText = styled.p`
   margin: 0 0 16px 0;
   font-size: 13px;
   color: #2d3748;
-  background: linear-gradient(135deg, rgba(90, 103, 216, 0.08), rgba(49, 151, 149, 0.08));
-  border: 1px solid rgba(90, 103, 216, 0.14);
-  border-radius: 12px;
+  background: #f0fdfa;
+  border: 1px solid #99f6e4;
+  border-radius: 8px;
   padding: 12px 14px;
 `;
 export const ActiveProfilePanel = styled.div`
@@ -58,6 +72,17 @@ export const ActiveProfileMeta = styled.p`
   font-size: 13px;
   line-height: 1.6;
   color: #4a5568;
+  overflow-wrap: anywhere;
+`;
+export const Editor = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+`;
+export const SectionTitle = styled.h3`
+  margin: 0;
+  font-size: 15px;
+  color: #1a202c;
 `;
 export const SubmissionDefaults = styled.div`
   display: flex;
@@ -109,8 +134,24 @@ export const TextInput = styled.input`
   outline: none;
 
   &:focus {
-    border-color: #5a67d8;
-    box-shadow: 0 0 0 3px rgba(90, 103, 216, 0.12);
+    border-color: #0f766e;
+    box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
+  }
+`;
+export const Select = styled.select`
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid #cbd5e0;
+  border-radius: 6px;
+  color: #1a202c;
+  background: #ffffff;
+  font-size: 13px;
+  outline: none;
+
+  &:focus {
+    border-color: #0f766e;
+    box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
   }
 `;
 export const Textarea = styled.textarea`
@@ -128,8 +169,8 @@ export const Textarea = styled.textarea`
   outline: none;
 
   &:focus {
-    border-color: #5a67d8;
-    box-shadow: 0 0 0 3px rgba(90, 103, 216, 0.12);
+    border-color: #0f766e;
+    box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
   }
 `;
 export const DefaultActions = styled.div`
@@ -139,30 +180,79 @@ export const DefaultActions = styled.div`
   flex-wrap: wrap;
 `;
 export const List = styled.div`display: flex; flex-direction: column; gap: 12px; margin-top: 12px;`;
+export const Filters = styled.div`
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 220px;
+  gap: 12px;
+  margin-top: 16px;
+
+  @media (max-width: 720px) {
+    grid-template-columns: 1fr;
+  }
+`;
 export const WebsiteCard = styled.div<{ isSelected: boolean }>`
   display: flex;
   flex-direction: column;
   gap: 14px;
   padding: 4px;
-  border-radius: 12px;
+  border-radius: 8px;
   background: ${({ isSelected }) =>
     isSelected
-      ? 'linear-gradient(135deg, rgba(90, 103, 216, 0.08), rgba(49, 151, 149, 0.08))'
+      ? 'linear-gradient(135deg, rgba(15, 118, 110, 0.08), rgba(49, 151, 149, 0.08))'
       : 'transparent'};
   box-shadow: ${({ isSelected }) =>
-    isSelected ? 'inset 0 0 0 1px rgba(90, 103, 216, 0.18)' : 'none'};
+    isSelected ? 'inset 0 0 0 1px rgba(15, 118, 110, 0.18)' : 'none'};
 `;
-export const WebsiteTopRow = styled.div`display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;`;
+export const WebsiteTopRow = styled.div`
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+
+  > div:first-of-type {
+    min-width: 0;
+  }
+`;
 export const WebsiteName = styled.h3`margin: 0 0 6px 0; font-size: 18px; color: #1a202c;`;
 export const WebsiteUrl = styled.a`
-  color: #5a67d8;
+  color: #0f766e;
   font-size: 13px;
   text-decoration: none;
+  overflow-wrap: anywhere;
   &:hover { text-decoration: underline; }
 `;
-export const WebsiteDescription = styled.p`margin: 0; font-size: 13px; line-height: 1.6; color: #4a5568;`;
+export const WebsiteDescription = styled.p`
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #4a5568;
+  overflow-wrap: anywhere;
+`;
 export const MetadataRow = styled.div`display: flex; gap: 16px; flex-wrap: wrap;`;
-export const MetadataItem = styled.span`font-size: 12px; color: #718096;`;
+export const MetadataItem = styled.span`
+  font-size: 12px;
+  color: #718096;
+  overflow-wrap: anywhere;
+`;
+export const BadgeStack = styled.div`
+  display: flex;
+  align-items: flex-end;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+`;
+export const SourceBadge = styled.span`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  background: #edf2f7;
+  color: #4a5568;
+`;
 export const StatusBadge = styled.span<{ status: WebsiteStatus }>`
   display: inline-flex;
   align-items: center;
@@ -182,6 +272,12 @@ export const ActionRow = styled.div`
   gap: 12px;
   flex-wrap: wrap;
   padding-top: 2px;
+`;
+export const ActionGroup = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 `;
 export const ActionHint = styled.span`
   flex: 1;

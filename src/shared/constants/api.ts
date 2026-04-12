@@ -20,6 +20,7 @@ export const STORAGE_KEYS = {
   SELECTED_WEBSITE_ID: 'selectedWebsiteId',
   SELECTED_WEBSITE_SNAPSHOT: 'selectedWebsiteSnapshot',
   WEBSITE_PROFILE_OVERRIDES: 'websiteProfileOverrides',
+  LOCAL_WEBSITE_PROFILES: 'localWebsiteProfiles',
   CURRENT_TAB_ID: 'currentTabId',
 } as const;
 
